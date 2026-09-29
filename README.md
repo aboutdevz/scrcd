@@ -98,3 +98,27 @@ Once the Microsoft Visual C++ Build Tools (`link.exe`) are installed:
 npm run tauri dev
 ```
 This launches the native desktop window with low-level Windows mouse hooks and floating pill affinity active.
+
+### 4. Package Windows Executables (Electron)
+```bash
+# Build portable standalone .exe
+npm run build:exe
+
+# Build standard Windows NSIS installer
+npm run build:installer
+
+# Build both portable & installer
+npm run build:all
+```
+Generated executables will be output to the `release/` directory.
+
+---
+
+## 📦 Releases & CI/CD
+
+SCRCD includes an automated release workflow powered by GitHub Actions:
+
+- **Automated Builds**: Pushing a tag like `v1.0.0` or triggering the **Release** workflow from GitHub Actions automatically runs tests, packages the Windows portable executable and installer, computes SHA-256 checksums, and publishes the release on GitHub.
+- **Release Automation**: Run `npm run release <patch|minor|major>` to run tests, bump versions, commit, and create an annotated git tag.
+- For complete details, see [RELEASING.md](file:///c:/Users/PTRE/Documents/scrcd/RELEASING.md).
+

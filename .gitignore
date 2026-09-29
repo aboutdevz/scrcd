@@ -1,20 +1,119 @@
+# ==============================================================================
+# SCRCD - Git Ignore Configuration
+# ==============================================================================
+
 # Node dependencies
 node_modules/
+.pnp
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# Production & Build Artifacts
 dist/
 dist-ssr/
+build/
+release/
+out/
 *.local
+
+# Native build artifacts in bin (allow only production helper binaries)
+bin/*
+!bin/capture.exe
+!bin/hook.exe
+bin/*.pdb
+bin/*.tmp
+
+# Electron & Packaging binaries
+*.exe~
+*.app
+*.dmg
+*.deb
+*.rpm
+*.snap
+*.AppImage
 
 # Tauri & Rust build artifacts
 src-tauri/target/
 target/
+Cargo.lock.backup
 
-# Local databases and cache
+# Local Databases & SQLite
 *.db
 *.db-journal
-*.log
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 
-# Editor & OS files
-.DS_Store
+# Logs & Debugging
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Caches & Temp files
+.cache/
+.turbo/
+.eslintcache
+.stylelintcache
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Environment Variables & Sensitive Credentials
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+*.env
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+
+# Operating System Files
+# Windows
 Thumbs.db
-.vscode/
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+.directory
+
+# IDEs & Code Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
 .idea/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln.docstates
+*.user
+*.userosv

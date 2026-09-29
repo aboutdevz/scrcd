@@ -3,9 +3,11 @@ import { useStore } from '@/store/useStore';
 import { generateDocx } from '@/services/exporters/exportDocx';
 import { generatePptx } from '@/services/exporters/exportPptx';
 import { generateHtml } from '@/services/exporters/exportHtml';
-import { generateMarkdownZip, generateMarkdownText } from '@/services/exporters/exportMarkdown';
+import { generateMarkdownZip } from '@/services/exporters/exportMarkdown';
 import { exportProjectToJson } from '@/services/exporters/exportJson';
-import { generateAnimatedWalkthrough } from '@/services/exporters/exportGif';
+import { generateAnimatedGif, generateAnimatedWalkthrough } from '@/services/exporters/exportGif';
+import { bakeStepsForExport } from '@/services/imageBaker';
+import { api, isElectron } from '@/services/api';
 import {
   FileText,
   FileCode,
@@ -17,7 +19,7 @@ import {
   Loader2,
   X,
   Palette,
-  Sparkles,
+  Download,
 } from 'lucide-react';
 
 interface ExportModalProps {
@@ -30,14 +32,16 @@ type ExportType = 'pdf' | 'docx' | 'pptx' | 'html' | 'md' | 'json' | 'gif';
 export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
   const { activeProject, steps, branding } = useStore();
   const [selectedFormat, setSelectedFormat] = useState<ExportType>('pdf');
+  const [walkthroughMode, setWalkthroughMode] = useState<'gif' | 'webm'>('gif');
   const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
   const [exportSuccess, setExportSuccess] = useState(false);
 
   // Custom branding overrides
   const [customAuthor, setCustomAuthor] = useState(branding.author);
   const [customCompany, setCustomCompany] = useState(branding.companyName);
   const [customAccent, setCustomAccent] = useState(branding.accentColor);
-  const [gifDuration, setGifDuration] = useState(1.5);
+  const [gifDuration, setGifDuration] = useState(1.2);
 
   if (!isOpen || !activeProject) return null;
 
@@ -52,14 +56,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     {
       id: 'docx',
       title: 'Microsoft Word (DOCX)',
-      desc: 'Editable Word document with embedded high-res screenshots and styles',
+      desc: 'Fully formatted Word document with embedded high-res screenshots and steps',
       icon: <FileText className="w-5 h-5 text-blue-500" />,
       ext: '.docx',
     },
     {
       id: 'pptx',
       title: 'PowerPoint (PPTX)',
-      desc: '16:9 widescreen presentation slide deck with instruction cards',
+      desc: '16:9 widescreen presentation deck with structured cards and screenshots',
       icon: <Presentation className="w-5 h-5 text-amber-500" />,
       ext: '.pptx',
     },
@@ -86,15 +90,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     },
     {
       id: 'gif',
-      title: 'Animated Walkthrough (Video/GIF)',
-      desc: 'Continuous loop slideshow showing clicks with pulsating ripple effects',
+      title: 'Animated Walkthrough (GIF / Video)',
+      desc: 'Looping animated slideshow showing click hotspots with pulsating ripple effects',
       icon: <Film className="w-5 h-5 text-pink-500" />,
-      ext: '.webm',
+      ext: walkthroughMode === 'gif' ? '.gif' : '.webm',
     },
   ];
 
   const handleExport = async () => {
     setIsExporting(true);
+    setExportProgress(0);
     setExportSuccess(false);
 
     const mergedBranding = {
@@ -107,48 +112,102 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     const sanitizedTitle = activeProject.title.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
 
     try {
-      if (selectedFormat === 'pdf' || selectedFormat === 'html') {
-        const htmlStr = generateHtml(activeProject, steps, mergedBranding);
-        if (selectedFormat === 'pdf') {
-          // Open print window
+      // Bake all annotations and hotspots into screenshots for export
+      const exportSteps = selectedFormat === 'json' ? steps : await bakeStepsForExport(steps);
+
+      if (selectedFormat === 'pdf') {
+        const htmlStr = generateHtml(activeProject, exportSteps, mergedBranding);
+
+        if (isElectron()) {
+          // Native Desktop printToPDF directly to user-chosen file
+          const res = await api.exportPdf(htmlStr, `${sanitizedTitle}_sop`);
+          if (res.canceled) {
+            setIsExporting(false);
+            return;
+          }
+          if (!res.success) {
+            throw new Error(res.error || 'Failed to save PDF');
+          }
+        } else {
+          // Browser fallback: open print window
           const printWin = window.open('', '_blank');
           if (printWin) {
             printWin.document.write(htmlStr);
             printWin.document.close();
-            setTimeout(() => {
-              printWin.print();
-            }, 500);
+
+            const triggerPrint = () => {
+              try {
+                printWin.focus();
+                printWin.print();
+              } catch (e) {
+                console.error('Error invoking print dialog:', e);
+              }
+            };
+
+            const checkAndPrint = async () => {
+              try {
+                const images = Array.from(printWin.document.images);
+                await Promise.all(
+                  images.map((img) => {
+                    if (img.complete) return Promise.resolve();
+                    return new Promise((r) => {
+                      img.onload = r;
+                      img.onerror = r;
+                    });
+                  })
+                );
+                setTimeout(triggerPrint, 350);
+              } catch {
+                setTimeout(triggerPrint, 800);
+              }
+            };
+
+            if (printWin.document.readyState === 'complete') {
+              checkAndPrint();
+            } else {
+              printWin.onload = checkAndPrint;
+              setTimeout(checkAndPrint, 2000);
+            }
           }
-        } else {
-          // Download HTML file
-          const blob = new Blob([htmlStr], { type: 'text/html' });
-          downloadBlob(blob, `${sanitizedTitle}.html`);
         }
+      } else if (selectedFormat === 'html') {
+        const htmlStr = generateHtml(activeProject, exportSteps, mergedBranding);
+        const blob = new Blob([htmlStr], { type: 'text/html' });
+        downloadBlob(blob, `${sanitizedTitle}.html`);
       } else if (selectedFormat === 'docx') {
-        const blob = await generateDocx(activeProject, steps, mergedBranding);
+        const blob = await generateDocx(activeProject, exportSteps, mergedBranding);
         downloadBlob(blob, `${sanitizedTitle}.docx`);
       } else if (selectedFormat === 'pptx') {
-        const blob = await generatePptx(activeProject, steps, mergedBranding);
+        const blob = await generatePptx(activeProject, exportSteps, mergedBranding);
         downloadBlob(blob, `${sanitizedTitle}.pptx`);
       } else if (selectedFormat === 'md') {
-        const blob = await generateMarkdownZip(activeProject, steps, mergedBranding);
+        const blob = await generateMarkdownZip(activeProject, exportSteps, mergedBranding);
         downloadBlob(blob, `${sanitizedTitle}_markdown.zip`);
       } else if (selectedFormat === 'json') {
         const jsonStr = exportProjectToJson(activeProject, steps);
         const blob = new Blob([jsonStr], { type: 'application/json' });
         downloadBlob(blob, `${sanitizedTitle}_backup.json`);
       } else if (selectedFormat === 'gif') {
-        const blob = await generateAnimatedWalkthrough(steps, gifDuration);
-        downloadBlob(blob, `${sanitizedTitle}_walkthrough.webm`);
+        if (walkthroughMode === 'gif') {
+          const blob = await generateAnimatedGif(exportSteps, {
+            durationPerStepSec: gifDuration,
+            onProgress: (pct) => setExportProgress(pct),
+          });
+          downloadBlob(blob, `${sanitizedTitle}_walkthrough.gif`);
+        } else {
+          const blob = await generateAnimatedWalkthrough(exportSteps, gifDuration);
+          downloadBlob(blob, `${sanitizedTitle}_walkthrough.webm`);
+        }
       }
 
       setExportSuccess(true);
-      setTimeout(() => setExportSuccess(false), 3000);
-    } catch (err) {
+      setTimeout(() => setExportSuccess(false), 3500);
+    } catch (err: any) {
       console.error('Export error:', err);
-      alert('Export failed. Please check console for details.');
+      alert(`Export failed: ${err.message || 'Please check console for details.'}`);
     } finally {
       setIsExporting(false);
+      setExportProgress(0);
     }
   };
 
@@ -260,20 +319,61 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
             </div>
 
             {selectedFormat === 'gif' && (
-              <div className="space-y-1 pt-2">
-                <div className="flex justify-between text-[11px] text-muted-foreground">
-                  <span>Seconds per step:</span>
-                  <span className="font-mono font-bold text-foreground">{gifDuration}s</span>
+              <div className="pt-3 border-t border-border/60 space-y-3">
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="font-semibold text-foreground">Format:</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="walkthroughFormat"
+                      checked={walkthroughMode === 'gif'}
+                      onChange={() => setWalkthroughMode('gif')}
+                      className="accent-primary"
+                    />
+                    <span className="text-foreground">Animated GIF (.gif)</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="walkthroughFormat"
+                      checked={walkthroughMode === 'webm'}
+                      onChange={() => setWalkthroughMode('webm')}
+                      className="accent-primary"
+                    />
+                    <span className="text-foreground">WebM Video (.webm)</span>
+                  </label>
                 </div>
-                <input
-                  type="range"
-                  min={0.8}
-                  max={3.0}
-                  step={0.1}
-                  value={gifDuration}
-                  onChange={(e) => setGifDuration(Number(e.target.value))}
-                  className="w-full accent-primary"
-                />
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] text-muted-foreground">
+                    <span>Seconds per step:</span>
+                    <span className="font-mono font-bold text-foreground">{gifDuration}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.8}
+                    max={3.0}
+                    step={0.1}
+                    value={gifDuration}
+                    onChange={(e) => setGifDuration(Number(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                </div>
+
+                {isExporting && exportProgress > 0 && (
+                  <div className="space-y-1 pt-1">
+                    <div className="flex justify-between text-[11px] text-muted-foreground">
+                      <span>Encoding frames:</span>
+                      <span className="font-bold text-primary">{exportProgress}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-150"
+                        style={{ width: `${exportProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -305,11 +405,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
               {isExporting ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Generating {selectedFormat.toUpperCase()}...
+                  {selectedFormat === 'gif' && exportProgress > 0
+                    ? `Encoding GIF (${exportProgress}%)...`
+                    : `Generating ${selectedFormat.toUpperCase()}...`}
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Download className="w-3.5 h-3.5" />
                   Download {selectedFormat.toUpperCase()}
                 </>
               )}

@@ -51,13 +51,12 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({ content, onChange 
   if (!editor) return null;
 
   const insertCallout = (type: 'tip' | 'warning' | 'note') => {
-    const icon = type === 'tip' ? '💡' : type === 'warning' ? '⚠️' : 'ℹ️';
     const title = type.toUpperCase();
     editor
       .chain()
       .focus()
       .insertContent(
-        `<blockquote><p><strong>${icon} ${title}:</strong> Insert specific guidance here...</p></blockquote>`
+        `<blockquote><p><strong>[${title}]:</strong> Insert guidance here...</p></blockquote>`
       )
       .run();
   };

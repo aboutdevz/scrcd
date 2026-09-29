@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { CanvasStage } from './CanvasStage';
 import { WysiwygEditor } from './WysiwygEditor';
-import { AnnotationTool, Step } from '@/types';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { ConfirmModal } from '@/components/common/ConfirmModal';
+import { AiHarnessModal } from './AiHarnessModal';
+import { AnnotationTool, AnnotationShape, Step } from '@/types';
 import {
   MousePointer,
   CircleDot,
@@ -19,7 +22,18 @@ import {
   GripVertical,
   CheckCircle2,
   Layers,
-  Sparkles,
+  Undo2,
+  Redo2,
+  ChevronDown,
+  Play,
+  Camera,
+  ImagePlus,
+  FileText,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Bot,
 } from 'lucide-react';
 
 export const EditorView: React.FC = () => {
@@ -27,12 +41,18 @@ export const EditorView: React.FC = () => {
     activeProject,
     steps,
     activeStepId,
+    stepHistoryPast,
+    stepHistoryFuture,
+    undoStep,
+    redoStep,
     selectStep,
     updateStep,
     deleteStep,
     reorderSteps,
     mergeSteps,
     addManualStep,
+    addStepFromImage,
+    startRecording,
     activeTool,
     setActiveTool,
     selectedShapeId,
@@ -40,16 +60,76 @@ export const EditorView: React.FC = () => {
     toolColor,
     setToolColor,
     strokeWidth,
-    setStrokeWidth,
     blurIntensity,
-    setBlurIntensity,
   } = useStore();
 
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [isAddStepMenuOpen, setIsAddStepMenuOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [stepToDelete, setStepToDelete] = useState<string | null>(null);
+  const addStepMenuRef = useRef<HTMLDivElement>(null);
+
+  // Resizable and Collapsible Sidebars
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(330);
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false);
+  const [isDraggingLeft, setIsDraggingLeft] = useState(false);
+  const [isDraggingRight, setIsDraggingRight] = useState(false);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDraggingLeft) {
+        const newWidth = Math.max(260, Math.min(480, e.clientX));
+        setLeftSidebarWidth(newWidth);
+      } else if (isDraggingRight) {
+        const newWidth = Math.max(250, Math.min(520, window.innerWidth - e.clientX));
+        setRightSidebarWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingLeft(false);
+      setIsDraggingRight(false);
+    };
+
+    if (isDraggingLeft || isDraggingRight) {
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingLeft, isDraggingRight]);
+
+  // Undo / Redo History for annotations
+  const [history, setHistory] = useState<{ past: AnnotationShape[][]; future: AnnotationShape[][] }>({
+    past: [],
+    future: [],
+  });
 
   const activeStep = steps.find((s) => s.id === activeStepId) || steps[0] || null;
 
-  const colorPalette = ['#2563eb', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ffffff'];
+  // Reset history when switching active step
+  const lastActiveStepIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeStepId !== lastActiveStepIdRef.current) {
+      lastActiveStepIdRef.current = activeStepId;
+      setHistory({ past: [], future: [] });
+    }
+  }, [activeStepId]);
+
+  const colorPalette = ['#f59e0b', '#2563eb', '#ef4444', '#10b981', '#8b5cf6', '#ffffff'];
 
   const tools: { id: AnnotationTool; label: string; icon: React.ReactNode }[] = [
     { id: 'select', label: 'Select & Move', icon: <MousePointer className="w-3.5 h-3.5" /> },
@@ -73,11 +153,104 @@ export const EditorView: React.FC = () => {
     updateStep({ ...activeStep, richInstructions: html });
   };
 
+  // Update step annotations while pushing to undo stack
+  const handleUpdateAnnotations = (updatedStep: Step) => {
+    if (!activeStep) return;
+    setHistory((prev) => ({
+      past: [...prev.past.slice(-30), activeStep.annotations],
+      future: [],
+    }));
+    updateStep(updatedStep);
+  };
+
+  const handleUndo = () => {
+    if (!activeStep || history.past.length === 0) return;
+    const previous = history.past[history.past.length - 1];
+    const newPast = history.past.slice(0, -1);
+    setHistory({
+      past: newPast,
+      future: [activeStep.annotations, ...history.future],
+    });
+    updateStep({ ...activeStep, annotations: previous });
+    setSelectedShapeId(null);
+  };
+
+  const handleRedo = () => {
+    if (!activeStep || history.future.length === 0) return;
+    const next = history.future[0];
+    const newFuture = history.future.slice(1);
+    setHistory({
+      past: [...history.past, activeStep.annotations],
+      future: newFuture,
+    });
+    updateStep({ ...activeStep, annotations: next });
+    setSelectedShapeId(null);
+  };
+
   const handleDeleteSelectedShape = () => {
     if (!activeStep || !selectedShapeId) return;
     const remaining = activeStep.annotations.filter((a) => a.id !== selectedShapeId);
-    updateStep({ ...activeStep, annotations: remaining });
+    handleUpdateAnnotations({ ...activeStep, annotations: remaining });
     setSelectedShapeId(null);
+  };
+
+  // Click outside for Add Step dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (addStepMenuRef.current && !addStepMenuRef.current.contains(e.target as Node)) {
+        setIsAddStepMenuOpen(false);
+      }
+    };
+    if (isAddStepMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isAddStepMenuOpen]);
+
+  // Keyboard shortcuts: Delete, Undo (Ctrl+Z), Redo (Ctrl+Y), Step Undo (Ctrl+Alt+Z), Step Redo (Ctrl+Alt+Y)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undoStep();
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        redoStep();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedShapeId) {
+          e.preventDefault();
+          handleDeleteSelectedShape();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedShapeId, activeStep, history, undoStep, redoStep]);
+
+  // Selected shape details if any
+  const selectedShape = activeStep?.annotations.find((a) => a.id === selectedShapeId);
+
+  const toggleHotspotVariant = () => {
+    if (!activeStep || !selectedShape || selectedShape.type !== 'hotspot') return;
+    const nextVariant: 'spotlight' | 'badge' = selectedShape.variant === 'badge' ? 'spotlight' : 'badge';
+    const updated: AnnotationShape[] = activeStep.annotations.map((a) =>
+      a.id === selectedShape.id ? ({ ...a, variant: nextVariant } as AnnotationShape) : a
+    );
+    handleUpdateAnnotations({ ...activeStep, annotations: updated });
   };
 
   if (!activeProject || steps.length === 0) {
@@ -87,9 +260,9 @@ export const EditorView: React.FC = () => {
           <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center mx-auto text-muted-foreground">
             <Layers className="w-6 h-6" />
           </div>
-          <h3 className="font-semibold text-sm">No steps recorded yet</h3>
+          <h3 className="font-semibold text-sm text-foreground">No steps recorded yet</h3>
           <p className="text-xs text-muted-foreground">
-            Click "Start Capture" or add a manual snapshot to begin creating your step-by-step SOP.
+            Start recording or add a manual step to begin creating your step-by-step SOP.
           </p>
           <button
             onClick={() => addManualStep()}
@@ -106,24 +279,135 @@ export const EditorView: React.FC = () => {
   return (
     <div className="flex-1 flex overflow-hidden bg-background">
       {/* 1. Left Sidebar: Step List */}
-      <aside className="w-72 border-r border-border bg-card/40 flex flex-col z-10 select-none">
-        <div className="p-3 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-xs text-foreground">Steps</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-secondary text-[11px] text-muted-foreground">
-              {steps.length}
-            </span>
+      {!isLeftCollapsed ? (
+        <aside
+          style={{ width: `${leftSidebarWidth}px` }}
+          className="border-r border-border bg-card flex flex-col z-10 select-none flex-shrink-0"
+        >
+          <div className="p-3 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-xs text-foreground">Steps</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-secondary text-[11px] text-muted-foreground">
+                  {steps.length}
+                </span>
+              </div>
+
+              {/* Step-Level Undo & Redo */}
+              <div className="flex items-center gap-0.5 border-l border-border pl-1.5">
+                <button
+                  onClick={undoStep}
+                  disabled={stepHistoryPast.length === 0}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-30 transition-colors"
+                  title="Undo Step Action (Ctrl+Alt+Z)"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={redoStep}
+                  disabled={stepHistoryFuture.length === 0}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-30 transition-colors"
+                  title="Redo Step Action (Ctrl+Alt+Y)"
+                >
+                  <Redo2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {/* Add Step Dropdown */}
+              <div className="relative" ref={addStepMenuRef}>
+                <button
+                  onClick={() => setIsAddStepMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary hover:bg-secondary/80 border border-border text-[11px] font-semibold text-foreground transition-colors whitespace-nowrap flex-shrink-0"
+                  title="Add Step Options"
+                >
+                  <span>Add Step</span>
+                  <ChevronDown className="w-3 h-3 text-muted-foreground ml-0.5" />
+                </button>
+
+            {isAddStepMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-60 rounded-xl border border-border bg-card shadow-2xl p-1.5 z-50 text-xs space-y-1 animate-in fade-in zoom-in-95 duration-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddStepMenuOpen(false);
+                    startRecording();
+                  }}
+                  className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-secondary text-left transition-colors text-foreground"
+                >
+                  <div className="p-1 rounded-md bg-primary/10 text-primary mt-0.5">
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-xs">Resume Recording</div>
+                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                      Continue capturing clicks as subsequent steps
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsAddStepMenuOpen(false);
+                    await addManualStep();
+                  }}
+                  className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-secondary text-left transition-colors text-foreground"
+                >
+                  <div className="p-1 rounded-md bg-emerald-500/10 text-emerald-500 mt-0.5">
+                    <Camera className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-xs">Capture Snapshot</div>
+                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                      Take a single screen capture right now
+                    </div>
+                  </div>
+                </button>
+
+                <label className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-secondary text-left transition-colors text-foreground cursor-pointer">
+                  <div className="p-1 rounded-md bg-blue-500/10 text-blue-500 mt-0.5">
+                    <ImagePlus className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-xs">Upload Image</div>
+                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                      Select JPG/PNG from your computer
+                    </div>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = async (evt) => {
+                          if (evt.target?.result) {
+                            await addStepFromImage(evt.target.result as string, file.name.replace(/\.[^/.]+$/, ''));
+                            setIsAddStepMenuOpen(false);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            )}
           </div>
 
           <button
-            onClick={() => addManualStep()}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-secondary hover:bg-accent text-[11px] font-medium transition-colors"
-            title="Add Manual Step"
+            onClick={() => setIsLeftCollapsed(true)}
+            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors ml-1"
+            title="Collapse Steps Sidebar"
           >
-            <Plus className="w-3 h-3" />
-            Add Step
+            <PanelLeftClose className="w-3.5 h-3.5" />
           </button>
         </div>
+      </div>
 
         {/* Step Items */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
@@ -133,7 +417,7 @@ export const EditorView: React.FC = () => {
               <React.Fragment key={step.id}>
                 {step.sectionTitle && (
                   <div className="pt-2 pb-1 px-1 flex items-center justify-between text-[11px] font-bold text-primary tracking-wide uppercase border-b border-border/60">
-                    <span className="truncate">📂 {step.sectionTitle}</span>
+                    <span className="truncate">{step.sectionTitle}</span>
                   </div>
                 )}
                 <div
@@ -150,7 +434,7 @@ export const EditorView: React.FC = () => {
                   className={`group relative flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${
                     isActive
                       ? 'bg-secondary border-primary/50 shadow-sm'
-                      : 'bg-card/30 border-transparent hover:bg-secondary/40 hover:border-border'
+                      : 'bg-card border-transparent hover:bg-secondary/40 hover:border-border'
                   }`}
                 >
                   {/* Drag Handle */}
@@ -159,98 +443,179 @@ export const EditorView: React.FC = () => {
                   </div>
 
                   {/* Step Thumbnail */}
-                  <div className="w-12 h-8 rounded border border-border bg-slate-900 overflow-hidden flex-shrink-0 relative">
+                  <div className="relative w-14 h-9 rounded bg-slate-900 border border-border overflow-hidden flex-shrink-0">
                     {step.screenshotPath && (
                       <img
                         src={step.screenshotPath}
-                        alt=""
+                        alt={`Step ${step.stepNumber}`}
                         className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
                       />
                     )}
-                    <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 rounded bg-black/70 text-[9px] font-bold text-white leading-none">
+                    <span className="absolute bottom-0 right-0 px-1 text-[9px] font-bold bg-slate-900/90 text-white rounded-tl">
                       {step.stepNumber}
                     </span>
                   </div>
 
-                {/* Step Info */}
-                <div className="flex-1 min-w-0 pr-1">
-                  <h4 className="text-xs font-medium truncate text-foreground leading-tight">
-                    {step.title}
-                  </h4>
-                  <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
-                    <span className="uppercase font-semibold">{step.actionType}</span>
-                    <span>•</span>
-                    <span className="truncate">{step.uiaAppName || 'Desktop'}</span>
+                  {/* Step Title & Summary */}
+                  <div className="flex-1 min-w-0 pr-6">
+                    <h4 className="text-xs font-medium text-foreground truncate">
+                      {step.title}
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {step.uiaName || step.actionType}
+                    </p>
                   </div>
-                </div>
 
-                {/* Action Buttons on Hover */}
-                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                  {/* Quick Action: Delete Step */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setStepToDelete(step.id);
+                    }}
+                    className="absolute right-2 top-2 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Delete step"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+
+                  {/* Merge with next step */}
                   {idx < steps.length - 1 && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         mergeSteps(step.id, steps[idx + 1].id);
                       }}
-                      className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"
-                      title="Merge with Next Step"
+                      className="absolute right-2 bottom-2 p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Merge into next step"
                     >
                       <Combine className="w-3 h-3" />
                     </button>
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteStep(step.id);
-                    }}
-                    className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                    title="Delete Step"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
                 </div>
-              </div>
-            </React.Fragment>
-          );
-        })}
+              </React.Fragment>
+            );
+          })}
         </div>
       </aside>
+      ) : (
+        <div className="w-10 border-r border-border bg-card flex flex-col items-center py-3 z-10 flex-shrink-0 select-none">
+          <button
+            onClick={() => setIsLeftCollapsed(false)}
+            className="p-1.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground transition-colors"
+            title="Expand Steps Sidebar"
+          >
+            <PanelLeftOpen className="w-4 h-4 text-primary" />
+          </button>
+          <div className="mt-8 text-[11px] font-semibold text-muted-foreground -rotate-90 whitespace-nowrap tracking-wider uppercase select-none">
+            Steps ({steps.length})
+          </div>
+        </div>
+      )}
 
-      {/* 2. Center: Canvas Stage & Annotation Bar */}
+      {/* Left Resize Splitter Handle */}
+      {!isLeftCollapsed && (
+        <div
+          onMouseDown={() => setIsDraggingLeft(true)}
+          className={`w-1 cursor-col-resize z-20 transition-colors flex-shrink-0 ${
+            isDraggingLeft ? 'bg-primary' : 'bg-transparent hover:bg-primary/50'
+          }`}
+          title="Drag to resize Steps sidebar"
+        />
+      )}
+
+      {/* 2. Main Center Canvas Studio */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
-        {/* Top Annotation Toolbar */}
-        <div className="h-11 border-b border-border bg-card/50 backdrop-blur-md px-3 flex items-center justify-between z-10 select-none">
-          {/* Tool selectors */}
-          <div className="flex items-center gap-0.5">
-            {tools.map((t) => (
+        {/* Canvas Toolbar */}
+        <div className="h-12 border-b border-border bg-card px-3 flex items-center justify-between z-20 select-none gap-2">
+          {/* Action Tools: Select, Undo, Redo, Delete */}
+          <div className="flex items-center gap-1 border-r border-border pr-2">
+            <button
+              onClick={() => {
+                setActiveTool('select');
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activeTool === 'select'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+              }`}
+              title="Select & Move (V)"
+            >
+              <MousePointer className="w-3.5 h-3.5" />
+              <span>Select</span>
+            </button>
+
+            <button
+              onClick={handleUndo}
+              disabled={history.past.length === 0}
+              className="p-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-30 transition-colors"
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={handleRedo}
+              disabled={history.future.length === 0}
+              className="p-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-30 transition-colors"
+              title="Redo (Ctrl+Y)"
+            >
+              <Redo2 className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={handleDeleteSelectedShape}
+              disabled={!selectedShapeId}
+              className="p-1.5 rounded-lg text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 transition-colors"
+              title="Delete Selected Element (Del)"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Annotation Creation Tools */}
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {tools.filter((t) => t.id !== 'select').map((t) => (
               <button
                 key={t.id}
                 onClick={() => {
                   setActiveTool(t.id);
-                  if (t.id !== 'select') setSelectedShapeId(null);
+                  setSelectedShapeId(null);
                 }}
-                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
                   activeTool === t.id
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                    ? 'bg-secondary text-foreground border border-border shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
                 }`}
                 title={t.label}
               >
                 {t.icon}
-                <span className="hidden xl:inline text-[11px]">{t.label}</span>
+                <span className="hidden xl:inline">{t.label}</span>
               </button>
             ))}
           </div>
 
           {/* Color & Stroke Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* Hotspot variant toggle if hotspot selected */}
+            {selectedShape && selectedShape.type === 'hotspot' && (
+              <button
+                onClick={toggleHotspotVariant}
+                className="flex items-center gap-1 px-2 py-1 rounded bg-secondary hover:bg-accent border border-border text-[11px] text-foreground font-medium"
+                title="Switch between Glowing Spotlight and Numbered Badge"
+              >
+                <span>{selectedShape.variant === 'badge' ? 'Numbered Badge' : 'Spotlight'}</span>
+              </button>
+            )}
+
             {/* Color Palette */}
-            <div className="flex items-center gap-1 border-r border-border pr-3">
+            <div className="flex items-center gap-1 border-r border-border pr-2">
               {colorPalette.map((c) => (
                 <button
                   key={c}
                   onClick={() => setToolColor(c)}
-                  className={`w-4 h-4 rounded-full border transition-transform ${
+                  className={`w-3.5 h-3.5 rounded-full border transition-transform ${
                     toolColor === c ? 'scale-125 ring-2 ring-primary/40' : 'hover:scale-110'
                   }`}
                   style={{ backgroundColor: c, borderColor: c === '#ffffff' ? '#cbd5e1' : c }}
@@ -258,30 +623,23 @@ export const EditorView: React.FC = () => {
               ))}
             </div>
 
-            {/* Stroke Width Slider */}
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="text-[11px]">Size</span>
-              <input
-                type="range"
-                min={2}
-                max={8}
-                value={strokeWidth}
-                onChange={(e) => setStrokeWidth(Number(e.target.value))}
-                className="w-16 accent-primary"
-              />
-            </div>
+            {/* Preview Document Button */}
+            <button
+              onClick={() => setIsPreviewOpen(true)}
+              className="flex items-center px-3 py-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold shadow-2xs transition-colors whitespace-nowrap flex-shrink-0"
+              title="Preview complete SOP document output"
+            >
+              <span>Preview Document</span>
+            </button>
 
-            {/* Delete Selected Shape */}
-            {selectedShapeId && (
-              <button
-                onClick={handleDeleteSelectedShape}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-destructive/10 text-destructive text-xs hover:bg-destructive/20 transition-colors"
-                title="Delete Selected Shape"
-              >
-                <Trash2 className="w-3 h-3" />
-                Delete
-              </button>
-            )}
+            {/* Auto-write with AI Button */}
+            <button
+              onClick={() => setIsAiModalOpen(true)}
+              className="flex items-center px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold shadow-2xs transition-colors whitespace-nowrap flex-shrink-0"
+              title="Automatically write SOP titles and rich instructions with AI"
+            >
+              <span>Auto-write with AI</span>
+            </button>
           </div>
         </div>
 
@@ -293,23 +651,62 @@ export const EditorView: React.FC = () => {
             toolColor={toolColor}
             strokeWidth={strokeWidth}
             blurIntensity={blurIntensity}
-            onUpdateStep={updateStep}
+            onUpdateStep={handleUpdateAnnotations}
             selectedShapeId={selectedShapeId}
             onSelectShape={setSelectedShapeId}
           />
         )}
       </main>
 
+      {/* Right Resize Splitter Handle */}
+      {!isRightCollapsed && activeStep && (
+        <div
+          onMouseDown={() => setIsDraggingRight(true)}
+          className={`w-1 cursor-col-resize z-20 transition-colors flex-shrink-0 ${
+            isDraggingRight ? 'bg-primary' : 'bg-transparent hover:bg-primary/50'
+          }`}
+          title="Drag to resize Inspector sidebar"
+        />
+      )}
+
+      {/* 3. Right Sidebar: Collapsed Rail */}
+      {isRightCollapsed && activeStep && (
+        <div className="w-12 border-l border-border bg-card flex flex-col items-center py-3 z-10 flex-shrink-0">
+          <button
+            onClick={() => setIsRightCollapsed(false)}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            title="Expand Inspector Sidebar"
+          >
+            <PanelRightOpen className="w-4 h-4" />
+          </button>
+          <div className="mt-8 text-[11px] font-semibold text-muted-foreground -rotate-90 whitespace-nowrap tracking-wider uppercase select-none">
+            Inspector
+          </div>
+        </div>
+      )}
+
       {/* 3. Right Sidebar: Step Metadata & Rich Text Editor */}
-      {activeStep && (
-        <aside className="w-80 border-l border-border bg-card/40 flex flex-col p-4 space-y-4 overflow-y-auto z-10">
+      {!isRightCollapsed && activeStep && (
+        <aside
+          style={{ width: `${rightSidebarWidth}px` }}
+          className="border-l border-border bg-card flex flex-col p-4 space-y-4 overflow-y-auto z-10 flex-shrink-0"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Step {activeStep.stepNumber} Details
-            </span>
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
-              {activeStep.actionType.toUpperCase()}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Step {activeStep.stepNumber} Details
+              </span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
+                {activeStep.actionType.toUpperCase()}
+              </span>
+            </div>
+            <button
+              onClick={() => setIsRightCollapsed(true)}
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              title="Collapse Inspector Sidebar"
+            >
+              <PanelRightClose className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {/* Step Title Input */}
@@ -319,101 +716,100 @@ export const EditorView: React.FC = () => {
               type="text"
               value={activeStep.title}
               onChange={(e) => handleStepTitleChange(e.target.value)}
-              className="w-full px-3 py-1.5 rounded-lg bg-secondary/60 border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="w-full px-3 py-1.5 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
             />
           </div>
 
-          {/* Section Divider Input */}
+          {/* Chapter / Section Header */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
-              <span>Chapter / Section Heading</span>
-              <span className="text-[10px] font-normal text-muted-foreground">Optional</span>
-            </label>
+            <label className="text-xs font-semibold text-foreground">Chapter / Section</label>
             <input
               type="text"
-              placeholder="e.g. Phase 1: Initial Setup"
+              placeholder="e.g. Phase 1: Authentication"
               value={activeStep.sectionTitle || ''}
-              onChange={(e) => updateStep({ ...activeStep, sectionTitle: e.target.value })}
-              className="w-full px-3 py-1.5 rounded-lg bg-secondary/60 border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/40"
+              onChange={(e) =>
+                updateStep({ ...activeStep, sectionTitle: e.target.value || undefined })
+              }
+              className="w-full px-3 py-1.5 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
             />
           </div>
 
-          {/* Replace Screenshot */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground">Screenshot Image</label>
-            <div className="flex items-center gap-2">
-              <label className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 border border-border text-xs font-medium cursor-pointer transition-colors text-foreground">
-                <span>📷 Replace Screenshot</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        if (event.target?.result) {
-                          updateStep({
-                            ...activeStep,
-                            screenshotPath: event.target.result as string,
-                          });
-                        }
-                      };
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-
-          {/* Rich Instructions (WYSIWYG) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">
-              Detailed Instructions & Notes
-            </label>
+          {/* Rich Text WYSIWYG Instructions */}
+          <div className="space-y-1.5 flex-1 flex flex-col">
+            <label className="text-xs font-semibold text-foreground">Detailed Instructions</label>
             <WysiwygEditor
               content={activeStep.richInstructions}
               onChange={handleRichInstructionsChange}
             />
           </div>
 
-          {/* UI Automation Inspector Details */}
-          <div className="pt-2 border-t border-border space-y-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Element Inspector
-            </span>
-
-            <div className="bg-secondary/40 rounded-lg p-2.5 border border-border text-[11px] space-y-1.5">
+          {/* Windows UIA Metadata Inspector */}
+          <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2 text-xs">
+            <div className="flex items-center justify-between border-b border-border pb-1.5">
+              <span className="font-semibold text-foreground">Element Metadata</span>
+              {activeStep.isPassword && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 text-[10px] font-bold">
+                  Masked
+                </span>
+              )}
+            </div>
+            <div className="space-y-1 text-muted-foreground text-[11px]">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Element Name:</span>
-                <span className="font-medium text-foreground truncate max-w-[140px]">
+                <span>Element:</span>
+                <span className="font-medium text-foreground truncate max-w-[130px]">
                   {activeStep.uiaName || 'None'}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Control Type:</span>
-                <span className="font-medium text-foreground">
-                  {activeStep.uiaControlType || 'Unknown'}
-                </span>
+                <span>Control Type:</span>
+                <span className="text-foreground">{activeStep.uiaControlType || 'Window'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Application:</span>
-                <span className="font-medium text-foreground truncate max-w-[140px]">
+                <span>Application:</span>
+                <span className="text-foreground truncate max-w-[130px]">
                   {activeStep.uiaAppName || 'Desktop'}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Click Coordinate:</span>
+                <span>Click Coordinates:</span>
                 <span className="font-mono text-foreground">
-                  ({activeStep.clickX}, {activeStep.clickY})
+                  ({Math.round(activeStep.clickX)}, {Math.round(activeStep.clickY)})
                 </span>
               </div>
             </div>
           </div>
         </aside>
       )}
+
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+      />
+
+      {/* AI Content Writer Harness Modal */}
+      <AiHarnessModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        onOpenSettings={() => useStore.getState().setCurrentView('settings')}
+      />
+
+      {/* Delete Step Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(stepToDelete)}
+        title="Delete Step"
+        message="Are you sure you want to delete this step? You can undo this change using the Undo button in the Steps sidebar."
+        confirmLabel="Delete Step"
+        isDestructive={true}
+        onConfirm={async () => {
+          if (stepToDelete) {
+            const id = stepToDelete;
+            setStepToDelete(null);
+            await deleteStep(id);
+          }
+        }}
+        onCancel={() => setStepToDelete(null)}
+      />
     </div>
   );
 };

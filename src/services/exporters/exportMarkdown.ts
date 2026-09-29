@@ -2,6 +2,17 @@ import JSZip from 'jszip';
 import { Project, Step, BrandingProfile } from '@/types';
 
 async function urlToBlob(url: string): Promise<Blob> {
+  if (url.startsWith('data:')) {
+    const parts = url.split(',');
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+    const binary = atob(parts[1]);
+    const array = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      array[i] = binary.charCodeAt(i);
+    }
+    return new Blob([array], { type: mime });
+  }
   const res = await fetch(url);
   return await res.blob();
 }

@@ -47,6 +47,8 @@ export interface HotspotShape extends BaseShape {
   number: number;
   color: string;
   label?: string;
+  variant?: 'spotlight' | 'badge';
+  radius?: number;
 }
 
 export interface ArrowShape extends BaseShape {
@@ -170,3 +172,32 @@ export interface ExportSettings {
   quality: number; // 0.85
   branding: BrandingProfile;
 }
+
+export interface DisplaySource {
+  id: number;
+  index: number;
+  isPrimary: boolean;
+  bounds: { x: number; y: number; width: number; height: number };
+  label: string;
+}
+
+export type CaptureScope = 'cursor' | 'window' | 'monitor' | 'all';
+
+export interface CaptureConfig {
+  scope: CaptureScope;
+  displayId?: number;
+  monitorBounds?: { x: number; y: number; width: number; height: number };
+  hotspotVariant: 'spotlight' | 'badge';
+}
+
+export type AiProvider = 'openai' | 'gemini' | 'anthropic' | 'custom';
+
+export interface AiConfig {
+  provider: AiProvider;
+  apiKey: string;
+  model: string;
+  customBaseUrl?: string;
+  systemPrompt?: string;
+}
+
+

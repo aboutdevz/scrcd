@@ -3,11 +3,19 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "test": "node tests/exportTest.js",
+    "build:tools": "powershell -ExecutionPolicy Bypass -File tools/build-tools.ps1",
+    "build:exe": "npm run build && electron-builder --win portable",
+    "build:installer": "npm run build && electron-builder --win nsis",
+    "build:all": "npm run build && electron-builder --win portable nsis",
+    "release": "node scripts/release.cjs",
+    "tauri": "tauri",
+    "electron:dev": "electron ."
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",
@@ -23,6 +31,7 @@
     "@tiptap/starter-kit": "^2.11.5",
     "clsx": "^2.1.1",
     "docx": "^9.2.0",
+    "gifenc": "^1.0.3",
     "jszip": "^3.10.1",
     "konva": "^9.3.18",
     "lucide-react": "^1.16.0",
@@ -40,9 +49,42 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
     "vite": "^6.2.0"
+  },
+  "build": {
+    "appId": "com.scrcd.app",
+    "productName": "SCRCD",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "public/**/*",
+      "bin/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "bin/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "icon": "public/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SCRCD"
+    }
   }
 }

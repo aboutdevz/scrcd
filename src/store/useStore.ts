@@ -19,6 +19,10 @@ interface AppState {
   // Steps
   steps: Step[];
   activeStepId: string | null;
+  stepHistoryPast: Step[][];
+  stepHistoryFuture: Step[][];
+  undoStep: () => Promise<void>;
+  redoStep: () => Promise<void>;
   loadSteps: (projectId: string) => Promise<void>;
   selectStep: (id: string) => void;
   updateStep: (step: Step) => Promise<void>;
@@ -26,6 +30,7 @@ interface AppState {
   reorderSteps: (startIndex: number, endIndex: number) => Promise<void>;
   mergeSteps: (step1Id: string, step2Id: string) => Promise<void>;
   addManualStep: () => Promise<Step | null>;
+  addStepFromImage: (fileDataUrl: string, title?: string) => Promise<Step | null>;
 
   // Canvas & Annotations
   activeTool: AnnotationTool;
@@ -43,7 +48,7 @@ interface AppState {
   isRecording: boolean;
   isPaused: boolean;
   appLock: boolean;
-  startRecording: (appLock?: boolean) => Promise<void>;
+  startRecording: (config?: any) => Promise<void>;
   stopRecording: () => Promise<void>;
   togglePause: () => void;
   toggleAppLock: () => void;
@@ -52,6 +57,14 @@ interface AppState {
   // Branding Profile
   branding: BrandingProfile;
   updateBranding: (branding: BrandingProfile) => void;
+
+  // AI BYOK Configuration
+  aiConfig: import('@/types').AiConfig;
+  setAiConfig: (config: Partial<import('@/types').AiConfig>) => void;
+  applyAiWrittenContent: (
+    updates: { id: string; title: string; richInstructions: string }[],
+    projectTitle?: string
+  ) => Promise<void>;
 
   // Search & Filter
   searchQuery: string;
@@ -121,6 +134,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   steps: [],
   activeStepId: null,
+  stepHistoryPast: [],
+  stepHistoryFuture: [],
 
   loadSteps: async (projectId) => {
     const steps = await api.listSteps(projectId);
@@ -128,7 +143,37 @@ export const useStore = create<AppState>((set, get) => ({
       steps,
       activeStepId: steps.length > 0 ? steps[0].id : null,
       selectedShapeId: null,
+      stepHistoryPast: [],
+      stepHistoryFuture: [],
     });
+  },
+
+  undoStep: async () => {
+    const { activeProject, steps, stepHistoryPast, stepHistoryFuture, activeStepId } = get();
+    if (!activeProject || stepHistoryPast.length === 0) return;
+    const previous = stepHistoryPast[stepHistoryPast.length - 1];
+    const newPast = stepHistoryPast.slice(0, -1);
+    set({
+      steps: previous,
+      stepHistoryPast: newPast,
+      stepHistoryFuture: [steps, ...stepHistoryFuture],
+      activeStepId: previous.find((s) => s.id === activeStepId) ? activeStepId : (previous[0]?.id ?? null),
+    });
+    await api.saveStepsBatch(activeProject.id, previous);
+  },
+
+  redoStep: async () => {
+    const { activeProject, steps, stepHistoryPast, stepHistoryFuture, activeStepId } = get();
+    if (!activeProject || stepHistoryFuture.length === 0) return;
+    const next = stepHistoryFuture[0];
+    const newFuture = stepHistoryFuture.slice(1);
+    set({
+      steps: next,
+      stepHistoryPast: [...stepHistoryPast, steps],
+      stepHistoryFuture: newFuture,
+      activeStepId: next.find((s) => s.id === activeStepId) ? activeStepId : (next[0]?.id ?? null),
+    });
+    await api.saveStepsBatch(activeProject.id, next);
   },
 
   selectStep: (id) => {
@@ -143,8 +188,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   deleteStep: async (id) => {
-    const { activeProject, steps, activeStepId } = get();
+    const { activeProject, steps, activeStepId, stepHistoryPast } = get();
     if (!activeProject) return;
+    set({
+      stepHistoryPast: [...stepHistoryPast.slice(-10), steps],
+      stepHistoryFuture: [],
+    });
     await api.deleteStep(activeProject.id, id);
     const remaining = steps.filter((s) => s.id !== id);
     remaining.forEach((s, idx) => {
@@ -155,8 +204,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   reorderSteps: async (startIndex, endIndex) => {
-    const { activeProject, steps } = get();
+    const { activeProject, steps, stepHistoryPast } = get();
     if (!activeProject) return;
+    set({
+      stepHistoryPast: [...stepHistoryPast.slice(-10), steps],
+      stepHistoryFuture: [],
+    });
     const reordered = Array.from(steps);
     const [moved] = reordered.splice(startIndex, 1);
     reordered.splice(endIndex, 0, moved);
@@ -168,11 +221,16 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   mergeSteps: async (step1Id, step2Id) => {
-    const { activeProject, steps } = get();
+    const { activeProject, steps, stepHistoryPast } = get();
     if (!activeProject) return;
     const s1 = steps.find((s) => s.id === step1Id);
     const s2 = steps.find((s) => s.id === step2Id);
     if (!s1 || !s2) return;
+
+    set({
+      stepHistoryPast: [...stepHistoryPast.slice(-10), steps],
+      stepHistoryFuture: [],
+    });
 
     // Merge s2 into s1: copy s2 annotations, add a second hotspot on s1, combine instructions
     const nextHotspotNumber = (s1.annotations.filter((a) => a.type === 'hotspot').length || 1) + 1;
@@ -204,12 +262,52 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   addManualStep: async () => {
-    const { activeProject } = get();
+    const { activeProject, steps, stepHistoryPast } = get();
     if (!activeProject) return null;
+    set({
+      stepHistoryPast: [...stepHistoryPast.slice(-10), steps],
+      stepHistoryFuture: [],
+    });
     const step = await api.manualSnapshot(activeProject.id);
     await get().loadSteps(activeProject.id);
-    set({ activeStepId: step.id });
+    if (step) {
+      set({ activeStepId: step.id });
+    }
     return step;
+  },
+
+  addStepFromImage: async (fileDataUrl: string, title?: string) => {
+    const { activeProject, steps, stepHistoryPast } = get();
+    if (!activeProject) return null;
+    set({
+      stepHistoryPast: [...stepHistoryPast.slice(-10), steps],
+      stepHistoryFuture: [],
+    });
+    const now = Date.now();
+    const stepNumber = steps.length + 1;
+    const newStep: Step = {
+      id: `step_${now}`,
+      projectId: activeProject.id,
+      stepNumber,
+      title: title || `Step ${stepNumber}`,
+      richInstructions: '<p>Perform actions as illustrated in the screenshot.</p>',
+      actionType: 'snapshot',
+      screenshotPath: fileDataUrl,
+      originalWidth: 1920,
+      originalHeight: 1080,
+      clickX: 0,
+      clickY: 0,
+      uiaName: 'Uploaded Image',
+      uiaControlType: 'Image',
+      uiaAppName: 'Manual',
+      annotations: [],
+      isPassword: false,
+      createdAt: now,
+    };
+    await api.saveStep(newStep);
+    await get().loadSteps(activeProject.id);
+    set({ activeStepId: newStep.id });
+    return newStep;
   },
 
   // Canvas Tools
@@ -229,13 +327,17 @@ export const useStore = create<AppState>((set, get) => ({
   isPaused: false,
   appLock: false,
 
-  startRecording: async (appLock = false) => {
+  startRecording: async (config?: any) => {
     let project = get().activeProject;
     if (!project) {
       project = await get().createProject('New Captured Guide', 'SOP');
     }
-    set({ isRecording: true, isPaused: false, appLock });
-    await api.startRecording(project.id, appLock);
+    const currentSteps = get().steps;
+    set({ isRecording: true, isPaused: false });
+    await api.startRecording(project.id, {
+      ...config,
+      existingStepsCount: currentSteps.length,
+    });
   },
 
   stopRecording: async () => {
@@ -263,6 +365,54 @@ export const useStore = create<AppState>((set, get) => ({
   updateBranding: (branding) => {
     api.saveGlobalBranding(branding);
     set({ branding });
+  },
+
+  // AI BYOK Configuration
+  aiConfig: (() => {
+    try {
+      const raw = localStorage.getItem('scrcd_ai_config');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return {
+      provider: 'openai' as const,
+      apiKey: '',
+      model: 'gpt-4o-mini',
+      customBaseUrl: '',
+    };
+  })(),
+
+  setAiConfig: (partial) => {
+    const updated = { ...get().aiConfig, ...partial };
+    localStorage.setItem('scrcd_ai_config', JSON.stringify(updated));
+    set({ aiConfig: updated });
+  },
+
+  applyAiWrittenContent: async (updates, projectTitle) => {
+    const { activeProject, steps } = get();
+    if (!activeProject) return;
+
+    const updateMap = new Map(updates.map((u) => [u.id, u]));
+    const updatedSteps = steps.map((s) => {
+      const u = updateMap.get(s.id);
+      if (u) {
+        return {
+          ...s,
+          title: u.title || s.title,
+          richInstructions: u.richInstructions || s.richInstructions,
+        };
+      }
+      return s;
+    });
+
+    await api.saveStepsBatch(activeProject.id, updatedSteps);
+    set({ steps: updatedSteps });
+
+    if (projectTitle && projectTitle.trim()) {
+      const updatedProj = { ...activeProject, title: projectTitle.trim() };
+      await api.saveProject(updatedProj);
+      set({ activeProject: updatedProj });
+      await get().loadProjects();
+    }
   },
 
   // Search

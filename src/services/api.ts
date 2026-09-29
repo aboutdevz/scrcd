@@ -6,7 +6,23 @@ export const isTauri = (): boolean => {
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 };
 
-// Initial sample projects for first-time use
+// Check if running inside Electron runtime
+export const isElectron = (): boolean => {
+  return typeof window !== 'undefined' && Boolean((window as any).require);
+};
+
+export const getElectron = () => {
+  if (isElectron()) {
+    try {
+      return (window as any).require('electron');
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+// Initial branding
 const DEFAULT_BRANDING: BrandingProfile = {
   companyName: 'Acme Corporation',
   author: 'System Operations Team',
@@ -14,137 +30,8 @@ const DEFAULT_BRANDING: BrandingProfile = {
   footerText: 'Confidential - Standard Operating Procedure',
 };
 
-const SAMPLE_PROJECTS: Project[] = [
-  {
-    id: 'proj_demo_chrome_security',
-    title: 'How to Update Account Security Settings in Chrome',
-    description: 'A standard operating procedure for navigating to user security settings, entering verification details, and saving modifications.',
-    category: 'SOP',
-    tags: ['Security', 'Browser', 'SOP'],
-    author: 'IT Security Dept',
-    companyName: 'Acme Global',
-    accentColor: '#2563eb',
-    createdAt: Date.now() - 3600000 * 24,
-    updatedAt: Date.now() - 3600000 * 2,
-  },
-  {
-    id: 'proj_demo_vscode_setup',
-    title: 'Developer Onboarding: Configuring VS Code Workspace',
-    description: 'Step-by-step walkthrough for opening the project workspace, configuring development dependencies, and verifying test suites.',
-    category: 'Onboarding',
-    tags: ['DevOps', 'VSCode', 'Onboarding'],
-    author: 'Engineering Lead',
-    companyName: 'Acme Global',
-    accentColor: '#10b981',
-    createdAt: Date.now() - 3600000 * 48,
-    updatedAt: Date.now() - 3600000 * 5,
-  },
-];
-
-const createSampleSteps = (projectId: string): Step[] => {
-  if (projectId === 'proj_demo_chrome_security') {
-    const shot1 = generateMockScreenshot('Google Chrome - Security Settings', 1280, 720, 520, 222, 'chrome');
-    const shot2 = generateMockScreenshot('Google Chrome - Security Settings', 1280, 720, 230, 290, 'chrome');
-
-    return [
-      {
-        id: 'step_1',
-        projectId,
-        stepNumber: 1,
-        title: "Click on 'Current Password' input field in Google Chrome",
-        richInstructions: '<p>Navigate to the Account Security tab and click inside the <strong>Current Password</strong> field to authenticate your session.</p>',
-        actionType: 'click',
-        screenshotPath: shot1,
-        originalWidth: 1280,
-        originalHeight: 720,
-        clickX: 270,
-        clickY: 222,
-        uiaName: 'Current Password',
-        uiaControlType: 'Input Field',
-        uiaAppName: 'Google Chrome',
-        annotations: [
-          {
-            id: 'h1',
-            type: 'hotspot',
-            x: 270,
-            y: 222,
-            number: 1,
-            color: '#2563eb',
-          },
-          {
-            id: 'arr1',
-            type: 'arrow',
-            points: [370, 270, 290, 235],
-            color: '#2563eb',
-            strokeWidth: 3,
-          },
-        ],
-        isPassword: true,
-        createdAt: Date.now() - 3600000 * 2,
-      },
-      {
-        id: 'step_2',
-        projectId,
-        stepNumber: 2,
-        title: "Click the 'Save Changes' button in Google Chrome",
-        richInstructions: '<p>Confirm your security modifications by clicking the blue <strong>Save Changes</strong> button at the bottom of the form.</p>',
-        actionType: 'click',
-        screenshotPath: shot2,
-        originalWidth: 1280,
-        originalHeight: 720,
-        clickX: 230,
-        clickY: 290,
-        uiaName: 'Save Changes',
-        uiaControlType: 'Button',
-        uiaAppName: 'Google Chrome',
-        annotations: [
-          {
-            id: 'h2',
-            type: 'hotspot',
-            x: 230,
-            y: 290,
-            number: 2,
-            color: '#2563eb',
-          },
-        ],
-        isPassword: false,
-        createdAt: Date.now() - 3600000 * 2 + 15000,
-      },
-    ];
-  }
-
-  const shotVS = generateMockScreenshot('Visual Studio Code', 1280, 720, 310, 105, 'vscode');
-  return [
-    {
-      id: 'step_vs_1',
-      projectId,
-      stepNumber: 1,
-      title: "Open App.tsx file in Visual Studio Code",
-      richInstructions: '<p>In the Explorer panel, locate the <code>src/</code> directory and double click on <strong>App.tsx</strong>.</p>',
-      actionType: 'double_click',
-      screenshotPath: shotVS,
-      originalWidth: 1280,
-      originalHeight: 720,
-      clickX: 135,
-      clickY: 120,
-      uiaName: 'App.tsx',
-      uiaControlType: 'ListItem',
-      uiaAppName: 'Visual Studio Code',
-      annotations: [
-        {
-          id: 'hvs1',
-          type: 'hotspot',
-          x: 135,
-          y: 120,
-          number: 1,
-          color: '#10b981',
-        },
-      ],
-      isPassword: false,
-      createdAt: Date.now() - 3600000 * 5,
-    },
-  ];
-};
+// Empty default projects (no hardcoded demos)
+const SAMPLE_PROJECTS: Project[] = [];
 
 type StepCallback = (step: Step) => void;
 const stepListeners: StepCallback[] = [];
@@ -162,10 +49,20 @@ export const api = {
     }
     const raw = localStorage.getItem('scrcd_projects');
     if (!raw) {
-      localStorage.setItem('scrcd_projects', JSON.stringify(SAMPLE_PROJECTS));
-      return SAMPLE_PROJECTS;
+      localStorage.setItem('scrcd_projects', JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(raw);
+    try {
+      let parsed: Project[] = JSON.parse(raw);
+      // Clean up legacy demo projects
+      const filtered = parsed.filter((p) => !p.id.startsWith('proj_demo_'));
+      if (filtered.length !== parsed.length) {
+        localStorage.setItem('scrcd_projects', JSON.stringify(filtered));
+      }
+      return filtered;
+    } catch {
+      return [];
+    }
   },
 
   async getProject(id: string): Promise<Project | null> {
@@ -220,11 +117,14 @@ export const api = {
     }
     const raw = localStorage.getItem(`scrcd_steps_${projectId}`);
     if (!raw) {
-      const initial = createSampleSteps(projectId);
-      localStorage.setItem(`scrcd_steps_${projectId}`, JSON.stringify(initial));
-      return initial;
+      localStorage.setItem(`scrcd_steps_${projectId}`, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(raw);
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
   },
 
   async saveStep(step: Step): Promise<void> {
@@ -276,20 +176,47 @@ export const api = {
     localStorage.setItem(`scrcd_steps_${projectId}`, JSON.stringify(filtered));
   },
 
-  async startRecording(projectId: string, appLock = false): Promise<void> {
+  async getCaptureSources(): Promise<{ displays: any[]; isMultiMonitor: boolean }> {
+    if (isElectron()) {
+      const electron = getElectron();
+      if (electron) {
+        return await electron.ipcRenderer.invoke('get-capture-sources');
+      }
+    }
+    return {
+      displays: [{ id: 1, index: 1, isPrimary: true, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, label: 'Primary Monitor (1920×1080)' }],
+      isMultiMonitor: false,
+    };
+  },
+
+  async startRecording(projectId: string, config?: any): Promise<void> {
+    if (isElectron()) {
+      const electron = getElectron();
+      if (electron) {
+        await electron.ipcRenderer.invoke('start-recording', { projectId, config });
+        return;
+      }
+    }
     if (isTauri()) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('start_recording', { projectId, appLock });
+        await invoke('start_recording', { projectId });
         return;
       } catch (err) {
         console.warn('Tauri invoke failed', err);
       }
     }
-    console.log(`[Dev-Bridge] Simulated recording started for project: ${projectId} (appLock: ${appLock})`);
+    console.log(`[Dev-Bridge] Simulated recording started for project: ${projectId}`);
   },
 
   async stopRecording(): Promise<void> {
+    if (isElectron()) {
+      const electron = getElectron();
+      if (electron) {
+        await electron.ipcRenderer.invoke('finish-recording');
+        return;
+      }
+    }
     if (isTauri()) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
@@ -302,7 +229,23 @@ export const api = {
     console.log('[Dev-Bridge] Simulated recording stopped.');
   },
 
-  async manualSnapshot(projectId: string): Promise<Step> {
+  async manualSnapshot(projectId: string): Promise<Step | null> {
+    if (isElectron()) {
+      const electron = getElectron();
+      if (electron) {
+        const existingSteps = await this.listSteps(projectId);
+        const step = await electron.ipcRenderer.invoke('manual-snapshot', {
+          projectId,
+          stepNumber: existingSteps.length + 1,
+        });
+        if (step) {
+          await this.saveStep(step);
+          stepListeners.forEach((cb) => cb(step));
+          return step;
+        }
+        return null;
+      }
+    }
     if (isTauri()) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
@@ -353,6 +296,19 @@ export const api = {
       const idx = stepListeners.indexOf(callback);
       if (idx >= 0) stepListeners.splice(idx, 1);
     };
+  },
+
+  async exportPdf(
+    htmlContent: string,
+    defaultFilename: string
+  ): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }> {
+    if (isElectron()) {
+      const electron = getElectron();
+      if (electron && electron.ipcRenderer) {
+        return await electron.ipcRenderer.invoke('export-pdf', { htmlContent, defaultFilename });
+      }
+    }
+    return { success: false, error: 'Native PDF export is available in Desktop mode' };
   },
 
   getGlobalBranding(): BrandingProfile {

@@ -32,7 +32,7 @@ export function generateHtml(
           step.screenshotPath
             ? `
         <div class="step-image-wrapper">
-          <img src="${step.screenshotPath}" alt="Step ${step.stepNumber}" class="step-image" loading="lazy" />
+          <img src="${step.screenshotPath}" alt="Step ${step.stepNumber}" class="step-image" loading="eager" decoding="sync" />
         </div>`
             : ''
         }
@@ -97,12 +97,10 @@ export function generateHtml(
       border-color: var(--accent);
     }
     .guide-header {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 32px;
-      margin-bottom: 32px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      background: transparent;
+      padding: 0 0 32px 0;
+      margin-bottom: 36px;
+      border-bottom: 1px solid var(--border);
     }
     .guide-title {
       font-size: 28px;
@@ -121,19 +119,20 @@ export function generateHtml(
       gap: 24px;
       font-size: 14px;
       color: var(--text-muted);
-      border-top: 1px solid var(--border);
-      padding-top: 16px;
+      padding-top: 4px;
     }
     .guide-meta strong {
       color: var(--text);
     }
     .step-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 24px;
+      background: transparent;
+      padding: 0 0 36px 0;
+      margin-bottom: 36px;
+      border-bottom: 1px solid var(--border);
       transition: opacity 0.2s;
+    }
+    .step-card:last-child {
+      border-bottom: none;
     }
     .step-card.completed {
       opacity: 0.6;
@@ -210,8 +209,10 @@ export function generateHtml(
     .step-image-wrapper {
       border-radius: 8px;
       overflow: hidden;
-      border: 1px solid var(--border);
-      background: #000000;
+      border: none;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      background: transparent;
+      margin-top: 16px;
     }
     .step-image {
       width: 100%;
@@ -219,24 +220,32 @@ export function generateHtml(
       display: block;
     }
     @media print {
-      body { background: #fff !important; color: #000 !important; padding: 0 !important; }
+      body { background: #fff !important; color: #000 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .top-actions, .step-checkbox { display: none !important; }
-      .guide-header, .step-card { border: 1px solid #ccc !important; background: #fff !important; color: #000 !important; page-break-inside: avoid; }
+      .guide-header { border: none !important; border-bottom: 1px solid #ddd !important; background: transparent !important; color: #000 !important; page-break-after: avoid; }
+      .step-card { border: none !important; border-bottom: 1px solid #eee !important; background: transparent !important; color: #000 !important; page-break-inside: avoid; break-inside: avoid; }
+      .step-card:last-child { border-bottom: none !important; }
       .step-badge { color: #fff !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-      .step-image-wrapper { border: 1px solid #ddd !important; }
+      .step-image-wrapper { border: none !important; box-shadow: none !important; page-break-inside: avoid; break-inside: avoid; }
+      .step-image { max-width: 100% !important; height: auto !important; display: block !important; }
     }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="top-actions">
-      <button class="btn" onclick="document.body.classList.toggle('light')">🌓 Toggle Light/Dark</button>
-      <button class="btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+      <button class="btn" onclick="document.body.classList.toggle('light')">Toggle Theme</button>
+      <button class="btn" onclick="window.print()">Print / Save as PDF</button>
     </div>
 
     <header class="guide-header">
-      <h1 class="guide-title">${escapeHtml(project.title)}</h1>
-      ${project.description ? `<p class="guide-desc">${escapeHtml(project.description)}</p>` : ''}
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;">
+        <div style="flex: 1;">
+          <h1 class="guide-title">${escapeHtml(project.title)}</h1>
+          ${project.description ? `<p class="guide-desc">${escapeHtml(project.description)}</p>` : ''}
+        </div>
+        ${branding.logoUrl ? `<img src="${branding.logoUrl}" alt="Logo" style="max-height: 54px; max-width: 180px; object-fit: contain; border-radius: 6px;" />` : ''}
+      </div>
       <div class="guide-meta">
         <div>Author: <strong>${escapeHtml(project.author || branding.author)}</strong></div>
         <div>Organization: <strong>${escapeHtml(project.companyName || branding.companyName)}</strong></div>
@@ -259,6 +268,24 @@ export function generateHtml(
         card.classList.remove('completed');
       }
     }
+
+    // Pre-decode all images
+    window.__imagesReady = new Promise((resolve) => {
+      const imgs = Array.from(document.images);
+      if (imgs.length === 0) return resolve();
+      let loaded = 0;
+      const check = () => {
+        loaded++;
+        if (loaded >= imgs.length) resolve();
+      };
+      imgs.forEach((img) => {
+        if (img.complete) check();
+        else {
+          img.addEventListener('load', check);
+          img.addEventListener('error', check);
+        }
+      });
+    });
   </script>
 </body>
 </html>`;

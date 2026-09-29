@@ -109,10 +109,9 @@ export function generateMockScreenshot(
     ctx.fillRect(winX + 50, winY + 40, 200, winH - 40);
     ctx.fillStyle = '#cccccc';
     ctx.font = '12px Inter, sans-serif';
-    ctx.fillText('EXPLORER', winX + 65, winY + 65);
-    ctx.fillText('📁 src', winX + 75, winY + 95);
-    ctx.fillText('  📄 App.tsx', winX + 75, winY + 120);
-    ctx.fillText('  📄 main.rs', winX + 75, winY + 145);
+    ctx.fillText('▾ src', winX + 75, winY + 95);
+    ctx.fillText('    App.tsx', winX + 75, winY + 120);
+    ctx.fillText('    main.rs', winX + 75, winY + 145);
 
     // Code Editor
     ctx.fillStyle = '#569cd6';
