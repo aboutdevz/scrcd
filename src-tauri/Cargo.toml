@@ -3,6 +3,7 @@ name = "scrcd"
 version = "1.0.0"
 description = "Automated Step-by-Step SOP & Guide Creator for Windows"
 authors = ["PTRE"]
+license = "MIT"
 edition = "2021"
 
 [lib]

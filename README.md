@@ -122,3 +122,8 @@ SCRCD includes an automated release workflow powered by GitHub Actions:
 - **Release Automation**: Run `npm run release <patch|minor|major>` to run tests, bump versions, commit, and create an annotated git tag.
 - For complete details, see [RELEASING.md](file:///c:/Users/PTRE/Documents/scrcd/RELEASING.md).
 
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](file:///c:/Users/PTRE/Documents/scrcd/LICENSE) - see the [LICENSE](file:///c:/Users/PTRE/Documents/scrcd/LICENSE) file for details.
