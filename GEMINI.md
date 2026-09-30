@@ -1,18 +1,43 @@
-# SCRCD Project Guidelines & Invariants
+# Project Guidelines & Invariants for SCRCD
 
-## 1. Electron WebContents Focus & Dialogs
-- **No Synchronous Native Dialogs**: Never use `window.confirm()`, `window.alert()`, or `window.prompt()`. In Electron on Windows, native synchronous dialogs detach/corrupt the webContents input focus upon dismissal, preventing users from typing into form fields.
-- **In-App Modals**: Always use custom in-app React modals (e.g. `ConfirmModal`) or asynchronous IPC calls with explicit window focus restoration for user confirmations.
+## 1. Git & Binary File Invariants
+- **Never Commit Build Artifacts**: Never track or commit compiled application executables, installers, or unpackaged bundles (`release/`, `dist/`, `build/`, `target/`).
+- **Pre-Push File Size Verification**: Always ensure no single file exceeds 50 MB (GitHub warning threshold) or 100 MB (GitHub hard rejection limit).
+- **History Pruning**: If large binaries are accidentally committed locally before pushing to remote, prune them from history (`git reset`, followed by `git reflog expire` and `git gc`) rather than simply adding a subsequent removal commit.
 
-## 2. Document Generation & PDF Export
-- **No Lazy Loading on Export Templates**: Never use `loading="lazy"` on `<img>` tags in templates intended for print or PDF export (`exportHtml.ts`, `DocumentPreviewModal.tsx`). In Chromium print preview, off-screen lazy images are not fetched or decoded, leaving multi-page exports blank past page 1.
-- **Explicit Image Decoding**: Always use `loading="eager"` and `decoding="sync"`, and wait for `Promise.all(images.map(img => img.decode ? img.decode() : ...))` before triggering `window.print()`.
+## 2. Remote Synchronization & Unrelated Histories
+- When connecting to a newly created GitHub remote initialized with a web `LICENSE` or `README`, reconcile unrelated histories cleanly using:
+  ```bash
+  git pull origin main --allow-unrelated-histories --no-rebase
+  ```
+- Always preserve the repository owner's license and attribution from GitHub.
 
-## 3. Workflow Recording & Step Management
-- **Preserve Existing Steps on Continuation**: When starting or resuming a recording session on an existing project, pass `existingStepsCount` as an offset. Newly captured steps must be appended ($N+1$, $N+2$, ...) rather than resetting arrays or overwriting storage with only the latest batch.
-- **Dual Undo/Redo Architecture**:
-  - **Step-Level Undo/Redo**: Track step additions, deletions, merges, and reorders in the Steps sidebar (`stepHistoryPast`, `stepHistoryFuture`, shortcuts `Ctrl+Alt+Z` / `Ctrl+Alt+Y`).
-  - **Canvas-Level Undo/Redo**: Keep annotation modifications on the active step isolated in canvas history (`Ctrl+Z` / `Ctrl+Y`). Do not conflate step lifecycle with shape drawing history.
+## 3. Native Helper Binaries & Release Pipelines
+- Windows helper utilities in `bin/` (`capture.exe`, `hook.exe`) must stay lean (<20 KB).
+- Source code in `tools/` must always have corresponding compilation scripts (`tools/build-tools.ps1` and `tools/build-tools.bat`) that utilize the built-in Windows .NET C# compiler (`csc.exe`).
+- Production releases must be triggered through the automated GitHub Actions release workflow (`.github/workflows/release.yml`) or via `npm run release <patch|minor|major>`.
 
-## 4. Electron Window & Packaging Configuration
-- **Application Icon**: Always configure `icon: path.join(__dirname, '../public/favicon.ico')` in `BrowserWindow` options and specify `"win": { "icon": "public/favicon.ico" }` under `build` in `package.json` to ensure taskbar, window titlebar, and portable executables have the official logo.
+## 4. UI & Icon Standards
+- **No Emojis in UI**: Do NOT use Unicode emojis (e.g., ✨, 📄, 💻, 🌿, ▶️) or sparkle icons for buttons, toolbars, badges, or simulated capture workflows.
+- **Lucide Icons**: Always import and use clean, semantic Lucide icons (e.g., `Download`, `Bot`, `Workflow`, `FileCode`, `Terminal`, `GitBranch`, `Play`, `FileText`).
+- **Collapsible & Resizable Panels**: Workspace sidebars (e.g., Steps list, Inspector) should maintain responsive layout balance using draggable splitters with min/max clamps and compact toggle rails.
+
+## 5. Electron & Windows Packaging
+- **Taskbar & App User Model ID**: Always register `app.setAppUserModelId('com.scrcd.app')` in `electron/main.cjs` so Windows properly pins and displays the application icon.
+- **Asset Packaging**: Always ensure `package.json` includes `"public/**/*"` in `"build.files"` so runtime icons (`favicon.ico`, `icon.png`) are bundled into packaged executables.
+- **Icon Paths**: Resolve icons across both development and packaged paths (`process.resourcesPath` and root).
+
+## 6. Document & Media Exporters
+- **DOCX (`docx` package)**:
+  - When embedding images in `docx`, ALWAYS specify `type: 'png'` (or `'jpg'`) in `new ImageRun(...)`. Omitting `type` creates invalid relationship schemas that cause Microsoft Word unreadable content errors.
+- **PPTX (`pptxgenjs` package)**:
+  - ALWAYS set `pptx.layout = 'LAYOUT_WIDE'` (13.33" × 7.5") for 16:9 presentations. The default `LAYOUT_16x9` is only 10" × 5.625" and will clip or misalign coordinates authored for widescreen templates.
+- **PDF Export**:
+  - Do NOT rely on `window.print()` inside Electron. Use native Electron IPC `webContents.printToPDF({ printBackground: true })` with `dialog.showSaveDialog`.
+- **Animated Walkthroughs**:
+  - Prefer fast, quantized animated GIFs via `gifenc` with frame progress callbacks and letterbox canvas scaling over heavy WebM screen recordings.
+
+## 7. BYOK AI Harness
+- **Privacy & Storage**: API keys are Bring-Your-Own-Key (BYOK) and must be stored client-side in `localStorage`.
+- **Provider Support**: Maintain agnostic provider support (`openai`, `gemini`, `anthropic`, `custom`).
+- **User Review Guardrail**: Never mutate user steps silently. AI generations must present a diff/review modal allowing users to inspect proposed changes before applying.
