@@ -16,6 +16,7 @@
 - Windows helper utilities in `bin/` (`capture.exe`, `hook.exe`) must stay lean (<20 KB).
 - Source code in `tools/` must always have corresponding compilation scripts (`tools/build-tools.ps1` and `tools/build-tools.bat`) that utilize the built-in Windows .NET C# compiler (`csc.exe`).
 - Production releases must be triggered through the automated GitHub Actions release workflow (`.github/workflows/release.yml`) or via `npm run release <patch|minor|major>`.
+- **C# UTF-8 Stdout Invariant**: C# native helpers compiled with `/target:winexe` must never call `Console.OutputEncoding` directly (which throws `The handle is invalid` on redirected handles). Always configure stdout via `Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true })` and sanitize JSON strings through `EscapeJson` to prevent non-ASCII Unicode (emojis, international characters) from degrading into `???`.
 
 ## 4. UI & Icon Standards
 - **No Emojis in UI**: Do NOT use Unicode emojis (e.g., ✨, 📄, 💻, 🌿, ▶️) or sparkle icons for buttons, toolbars, badges, or simulated capture workflows.
@@ -33,7 +34,7 @@
 - **PPTX (`pptxgenjs` package)**:
   - ALWAYS set `pptx.layout = 'LAYOUT_WIDE'` (13.33" × 7.5") for 16:9 presentations. The default `LAYOUT_16x9` is only 10" × 5.625" and will clip or misalign coordinates authored for widescreen templates.
 - **PDF Export**:
-  - Do NOT rely on `window.print()` inside Electron. Use native Electron IPC `webContents.printToPDF({ printBackground: true })` with `dialog.showSaveDialog`.
+  - Do NOT rely on `window.print()` inside Electron. Use native Electron IPC `webContents.printToPDF({ printBackground: true })` with `dialog.showSaveDialog`. Never call `emulateMediaType` on `webContents` (it is a Puppeteer-only API and will crash Electron; `printToPDF` already applies `@media print` rules automatically).
 - **Animated Walkthroughs**:
   - Prefer fast, quantized animated GIFs via `gifenc` with frame progress callbacks and letterbox canvas scaling over heavy WebM screen recordings.
 
@@ -46,9 +47,11 @@
 - **Zero Emojis**: Do not use emojis anywhere in the app UI, toolbars, buttons, dialogs, or exported documents. Use Lucide icons or clear text labels.
 - **No Extraneous Badges or Placeholder Icons**: Avoid decorative badges, custom app logo placeholders, or artificial marketing stickers. Keep the interface clean, technical, and purposeful.
 - **Full Light Mode Support**: All UI components and export templates must support a clean, accessible light mode alongside dark mode.
+- **Explicit Dark Mode Typography Styling**: Because `@tailwindcss/typography` (`prose prose-invert`) is not installed, never rely on `prose-invert` for contrast. Headings (`h1`, `h2`) and rich HTML container elements (`p`, `strong`, `em`, `code`) must always have explicit high-contrast classes (e.g., `text-white [&_strong]:text-white [&_p]:text-slate-200` in dark mode; `text-slate-900 [&_p]:text-slate-800` in light mode).
 
 ## 9. Document & Export Styling Standards
 - **Borderless Document Styling**: In exported HTML, PDF, DOCX, and PPTX documents, do NOT wrap steps in card border boxes. Content should flow cleanly down the page separated by natural whitespace or subtle divider lines.
+- **Classic Table of Contents (Dotted Leaders)**: In Document Preview and all exported documents (HTML, PDF, print), do NOT render Table of Contents as multi-column pill buttons or badge cards. Always format TOC using the classic publication standard: centered heading ("Table of Contents"), followed by single-column rows featuring the title on the left, a continuous dotted leader line (`border-b border-dotted`) spanning the space, and right-aligned tabular numerals (`tabular-nums`) for step/page numbers.
 - **Mandatory Annotation Baking**: Screenshots passed to exporters (HTML, PDF, DOCX, PPTX, Markdown, GIF) must ALWAYS have annotations (click hotspots, spotlight halos, pointer icons, badges, arrows, blurs) burned directly into the image via `bakeStepsForExport` before document generation. Raw screenshots must never be exported without annotations.
 
 ## 10. Privacy & Redaction Standards
@@ -60,4 +63,7 @@
 - **Smart Focus Cropping**: When capturing area near cursor, crop to a 1200×750 viewport centered at the cursor rather than capturing the full ultra-wide multi-screen desktop.
 - **Full Canvas Manipulation**: Maintain complete interactive canvas controls: select, move, resize (Transformer), delete (Backspace/Delete), and undo/redo (Ctrl+Z / Ctrl+Y).
 - **100% Offline Privacy**: Zero external telemetry, tracking, or network calls.
+
+## 12. Modal & Document Preview Layout Architecture
+- **No Flex Stretch on Scroll Containers**: In modal preview dialogs (e.g. `DocumentPreviewModal`), the scrollable parent container (`overflow-y-auto`) must never have `flex justify-center`. In CSS flexbox, cross-axis stretching (`align-items: stretch`) clamps the document card's calculated height to the initial viewport height, causing subsequent steps to overflow outside the card background onto the backdrop. Always use standard block scrolling on the parent and block centering (`w-full max-w-4xl mx-auto min-h-full`) on the card container so its background encapsulates 100% of all content from top to bottom.
 
