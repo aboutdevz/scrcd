@@ -31,37 +31,56 @@ export function generateHtml(
     chapters.push(currentChapter);
   }
 
-  // Render Table of Contents
-  const tocHtml = steps.length > 2
+  // Render Table of Contents (Classic Dotted Leader Style)
+  const hasChapters = chapters.some((c) => c.title);
+  const tocHtml = steps.length > 1
     ? `
     <nav class="toc-container">
       <div class="toc-header">
         <h2 class="toc-heading">Table of Contents</h2>
-        <span class="toc-badge">${steps.length} Steps</span>
       </div>
       <div class="toc-list">
-        ${chapters
-          .map(
-            (ch) => `
-          <div class="toc-chapter">
-            ${ch.title ? `<div class="toc-chapter-title">${escapeHtml(ch.title)}</div>` : ''}
-            <ul class="toc-steps">
-              ${ch.steps
+        ${
+          hasChapters
+            ? chapters
+                .map(
+                  (ch) => `
+              <div class="toc-group">
+                ${
+                  ch.title
+                    ? `<a href="#step-${ch.steps[0].stepNumber}" class="toc-row toc-row-chapter">
+                        <span class="toc-title">${escapeHtml(ch.title)}</span>
+                        <span class="toc-leader"></span>
+                        <span class="toc-num">${ch.steps[0].stepNumber}</span>
+                      </a>`
+                    : ''
+                }
+                <div class="${ch.title ? 'toc-sub-steps' : ''}">
+                  ${ch.steps
+                    .map(
+                      (s) => `
+                    <a href="#step-${s.stepNumber}" class="toc-row">
+                      <span class="toc-title">${escapeHtml(s.title)}</span>
+                      <span class="toc-leader"></span>
+                      <span class="toc-num">${s.stepNumber}</span>
+                    </a>`
+                    )
+                    .join('\n')}
+                </div>
+              </div>`
+                )
+                .join('\n')
+            : steps
                 .map(
                   (s) => `
-                <li class="toc-item">
-                  <a href="#step-${s.stepNumber}" class="toc-link">
-                    <span class="toc-step-num">Step ${s.stepNumber}</span>
-                    <span class="toc-step-title">${escapeHtml(s.title)}</span>
-                    <span class="toc-step-action">${escapeHtml(s.actionType.toUpperCase())}</span>
-                  </a>
-                </li>`
+              <a href="#step-${s.stepNumber}" class="toc-row">
+                <span class="toc-title">${escapeHtml(s.title)}</span>
+                <span class="toc-leader"></span>
+                <span class="toc-num">${s.stepNumber}</span>
+              </a>`
                 )
-                .join('\n')}
-            </ul>
-          </div>`
-          )
-          .join('\n')}
+                .join('\n')
+        }
       </div>
     </nav>`
     : '';
@@ -195,87 +214,99 @@ export function generateHtml(
       color: var(--text);
     }
 
-    /* Table of Contents */
+    /* Table of Contents (Classic Dotted Leader Style) */
     .toc-container {
-      padding: 24px 0;
+      padding: 24px 0 32px 0;
       margin-bottom: 36px;
       border-bottom: 1px solid var(--border);
     }
     .toc-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 16px;
+      text-align: center;
+      margin-bottom: 24px;
     }
     .toc-heading {
-      font-size: 18px;
+      font-size: 22px;
       font-weight: 700;
       color: var(--text);
-    }
-    .toc-badge {
-      font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 9999px;
-      background: rgba(148, 163, 184, 0.2);
-      color: var(--text-muted);
-      font-weight: 600;
+      letter-spacing: -0.01em;
     }
     .toc-list {
+      max-width: 680px;
+      margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 6px;
     }
-    .toc-chapter-title {
-      font-size: 13px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--accent);
-      margin-bottom: 8px;
-    }
-    .toc-steps {
-      list-style: none;
-      padding-left: 0;
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 8px;
-    }
-    .toc-item {
-      margin: 0;
-    }
-    .toc-link {
+    .toc-group {
       display: flex;
-      align-items: center;
+      flex-direction: column;
+      gap: 4px;
+      padding-top: 8px;
+    }
+    .toc-group:first-child {
+      padding-top: 0;
+    }
+    .toc-sub-steps {
+      padding-left: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .toc-row {
+      display: flex;
+      align-items: baseline;
       gap: 8px;
-      padding: 6px 10px;
-      border-radius: 6px;
       text-decoration: none;
       color: var(--text);
-      background: rgba(148, 163, 184, 0.08);
-      font-size: 13px;
-      transition: background 0.15s;
+      padding: 3px 6px;
+      border-radius: 4px;
+      font-size: 14px;
+      transition: background 0.15s, color 0.15s;
     }
-    .toc-link:hover {
-      background: rgba(148, 163, 184, 0.2);
-    }
-    .toc-step-num {
-      font-weight: 700;
+    .toc-row:hover {
+      background: rgba(148, 163, 184, 0.12);
       color: var(--accent);
-      white-space: nowrap;
     }
-    .toc-step-title {
-      flex: 1;
+    .toc-row-chapter {
+      font-weight: 700;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+    }
+    .toc-title {
+      flex-shrink: 0;
+      max-width: 78%;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .toc-step-action {
-      font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background: rgba(148, 163, 184, 0.15);
-      color: var(--text-muted);
+    .toc-leader {
+      flex: 1;
+      border-bottom: 1px dotted var(--border);
+      margin-bottom: 4px;
+      min-width: 16px;
+      transition: border-color 0.15s;
+    }
+    .toc-row:hover .toc-leader {
+      border-bottom-color: var(--accent);
+    }
+    .toc-row-chapter .toc-leader {
+      border-bottom: 2px dotted var(--accent);
+      opacity: 0.6;
+    }
+    .toc-num {
+      flex-shrink: 0;
       font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-muted);
+    }
+    .toc-row:hover .toc-num {
+      color: var(--accent);
+    }
+    .toc-row-chapter .toc-num {
+      color: var(--accent);
+      font-weight: 700;
     }
 
     /* Steps */
@@ -410,18 +441,28 @@ export function generateHtml(
         border-bottom: 1px solid #cbd5e1 !important;
         page-break-after: auto;
       }
-      .toc-heading { color: #0f172a !important; }
-      .toc-chapter-title { color: #1e3a8a !important; }
-      .toc-link {
+      .toc-heading {
         color: #0f172a !important;
-        background: #f8fafc !important;
-        border: 1px solid #e2e8f0 !important;
+        text-align: center !important;
       }
-      .toc-step-title { color: #0f172a !important; }
-      .toc-step-action {
-        color: #1e293b !important;
-        border: 1px solid #94a3b8 !important;
-        background: #f1f5f9 !important;
+      .toc-row {
+        color: #0f172a !important;
+        padding: 2px 0 !important;
+      }
+      .toc-row-chapter {
+        color: #1e3a8a !important;
+      }
+      .toc-leader {
+        border-bottom: 1px dotted #94a3b8 !important;
+      }
+      .toc-row-chapter .toc-leader {
+        border-bottom: 2px dotted #1e3a8a !important;
+      }
+      .toc-num {
+        color: #334155 !important;
+      }
+      .toc-row-chapter .toc-num {
+        color: #1e3a8a !important;
       }
       .step-section-header {
         color: #1e3a8a !important;

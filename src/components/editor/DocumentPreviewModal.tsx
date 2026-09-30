@@ -219,15 +219,15 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       </div>
 
       {/* Main Preview Scrollable Area */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-8">
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center p-12 text-muted-foreground space-y-3">
+          <div className="flex flex-col items-center justify-center p-12 text-muted-foreground space-y-3 min-h-[300px]">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
             <p className="text-sm font-medium">Baking annotations & rendering preview...</p>
           </div>
         ) : (
           <div
-            className={`w-full max-w-4xl rounded-2xl shadow-2xl transition-colors duration-200 p-8 sm:p-12 space-y-8 ${
+            className={`w-full max-w-4xl mx-auto rounded-2xl shadow-2xl transition-colors duration-200 p-8 sm:p-12 space-y-8 min-h-full ${
               previewTheme === 'dark'
                 ? 'bg-slate-900 border border-slate-800 text-slate-100'
                 : 'bg-white border border-slate-200 text-slate-900'
@@ -296,50 +296,116 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               </div>
             </div>
 
-            {/* Chapter-based Table of Contents */}
-            {bakedSteps.length > 2 && (
+            {/* Chapter-based Table of Contents (Classic Dotted Leader Style) */}
+            {bakedSteps.length > 1 && (
               <div
-                className={`p-5 rounded-xl border ${
+                className={`my-8 p-6 sm:p-8 rounded-xl border ${
                   previewTheme === 'dark'
-                    ? 'bg-slate-850/90 border-slate-800 text-slate-200'
-                    : 'bg-slate-50 border-slate-200 text-slate-800'
+                    ? 'bg-slate-900/60 border-slate-800 text-slate-200'
+                    : 'bg-slate-50/80 border-slate-200 text-slate-800'
                 }`}
               >
-                <div className="text-xs font-bold mb-3 flex items-center gap-1.5 uppercase tracking-wider text-primary">
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>Table of Contents ({bakedSteps.length} steps)</span>
+                <div className="text-center mb-6">
+                  <h2
+                    className={`text-xl font-bold tracking-tight ${
+                      previewTheme === 'dark' ? 'text-white' : 'text-slate-900'
+                    }`}
+                  >
+                    Table of Contents
+                  </h2>
                 </div>
-                <div className="space-y-3">
-                  {chapters.map((ch, idx) => (
-                    <div key={idx} className="space-y-1.5">
-                      {ch.title && (
-                        <div
-                          className="text-[11px] font-bold uppercase tracking-wider"
-                          style={{ color: accent }}
-                        >
-                          {ch.title}
-                        </div>
-                      )}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5">
-                        {ch.steps.map((s) => (
+
+                <div className="space-y-1.5 max-w-2xl mx-auto">
+                  {chapters.some((c) => c.title) ? (
+                    chapters.map((ch, idx) => (
+                      <div key={idx} className="space-y-1 pt-2 first:pt-0">
+                        {ch.title && (
                           <button
-                            key={s.id}
-                            onClick={() => scrollToStep(s.stepNumber)}
-                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition-colors ${
+                            type="button"
+                            onClick={() => scrollToStep(ch.steps[0].stepNumber)}
+                            className={`w-full group flex items-baseline gap-2 py-1.5 px-2 rounded-md transition-colors text-left font-bold text-sm ${
                               previewTheme === 'dark'
-                                ? 'bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white border border-slate-750'
-                                : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 shadow-2xs'
+                                ? 'hover:bg-slate-800 text-slate-100'
+                                : 'hover:bg-slate-100 text-slate-900'
                             }`}
                           >
-                            <span className="font-bold text-[11px] text-primary whitespace-nowrap">
-                              #{s.stepNumber}
+                            <span
+                              className="flex-shrink-0 max-w-[78%] truncate uppercase tracking-wider font-bold"
+                              style={{ color: accent }}
+                            >
+                              {ch.title}
                             </span>
-                            <span className="truncate flex-1 font-medium">{s.title}</span>
+                            <span
+                              className={`flex-1 border-b-2 border-dotted mb-1 ${
+                                previewTheme === 'dark' ? 'border-slate-700' : 'border-slate-300'
+                              }`}
+                            />
+                            <span
+                              className="flex-shrink-0 tabular-nums font-bold"
+                              style={{ color: accent }}
+                            >
+                              {ch.steps[0].stepNumber}
+                            </span>
                           </button>
-                        ))}
+                        )}
+                        <div className={ch.title ? 'pl-4 space-y-1' : 'space-y-1'}>
+                          {ch.steps.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => scrollToStep(s.stepNumber)}
+                              className={`w-full group flex items-baseline gap-2 py-1 px-2 rounded-md transition-colors text-left text-xs sm:text-sm ${
+                                previewTheme === 'dark'
+                                  ? 'hover:bg-slate-800/80 text-slate-300 hover:text-white'
+                                  : 'hover:bg-slate-100 text-slate-700 hover:text-slate-900'
+                              }`}
+                            >
+                              <span className="flex-shrink-0 max-w-[78%] truncate font-medium">
+                                {s.title}
+                              </span>
+                              <span
+                                className={`flex-1 border-b border-dotted mb-1 transition-colors ${
+                                  previewTheme === 'dark'
+                                    ? 'border-slate-800 group-hover:border-slate-600'
+                                    : 'border-slate-300 group-hover:border-slate-400'
+                                }`}
+                              />
+                              <span className="flex-shrink-0 tabular-nums font-semibold text-muted-foreground group-hover:text-foreground">
+                                {s.stepNumber}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    bakedSteps.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => scrollToStep(s.stepNumber)}
+                        className={`w-full group flex items-baseline gap-2 py-1 px-2 rounded-md transition-colors text-left text-xs sm:text-sm ${
+                          previewTheme === 'dark'
+                            ? 'hover:bg-slate-800 text-slate-200 hover:text-white'
+                            : 'hover:bg-slate-100 text-slate-800 hover:text-slate-900'
+                        }`}
+                      >
+                        <span className="flex-shrink-0 max-w-[78%] truncate font-medium">
+                          {s.title}
+                        </span>
+                        <span
+                          className={`flex-1 border-b border-dotted mb-1 transition-colors ${
+                            previewTheme === 'dark'
+                              ? 'border-slate-700 group-hover:border-slate-500'
+                              : 'border-slate-300 group-hover:border-slate-400'
+                          }`}
+                        />
+                        <span className="flex-shrink-0 tabular-nums font-semibold text-muted-foreground group-hover:text-foreground">
+                          {s.stepNumber}
+                        </span>
+                      </button>
+                    ))
+                  )}
                 </div>
               </div>
             )}
