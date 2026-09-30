@@ -587,9 +587,6 @@ ipcMain.handle('export-pdf', async (_event, { htmlContent, defaultFilename }) =>
         });
       `);
 
-      // Emulate print media type for exact @media print CSS application
-      await printWin.webContents.emulateMediaType('print');
-
       pdfBuffer = await printWin.webContents.printToPDF({
         printBackground: true,
         pageSize: 'A4',

@@ -101,8 +101,47 @@ public class Program
         public POINT pt;
     }
 
+    private static string EscapeJson(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        StringBuilder sb = new StringBuilder();
+        foreach (char c in s)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '\"': sb.Append("\\\""); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (c < 32)
+                    {
+                        sb.AppendFormat("\\u{0:x4}", (int)c);
+                    }
+                    else
+                    {
+                        sb.Append(c);
+                    }
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
+
     public static void Main()
     {
+        try
+        {
+            Stream stdout = Console.OpenStandardOutput();
+            StreamWriter writer = new StreamWriter(stdout, new UTF8Encoding(false));
+            writer.AutoFlush = true;
+            Console.SetOut(writer);
+        }
+        catch {}
+
         SetProcessDPIAware();
 
         using (Process curProcess = Process.GetCurrentProcess())
@@ -165,7 +204,7 @@ public class Program
                 string title = sb.ToString().Trim();
                 if (!string.IsNullOrEmpty(title))
                 {
-                    string escaped = title.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
+                    string escaped = EscapeJson(title);
                     Console.WriteLine(string.Format("{{\"type\":\"window_focus\",\"windowTitle\":\"{0}\",\"hwnd\":{1}}}", escaped, hwnd.ToInt64()));
                     Console.Out.Flush();
                 }

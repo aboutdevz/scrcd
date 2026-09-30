@@ -241,13 +241,17 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             >
               <div className="flex items-start justify-between gap-6">
                 <div className="flex-1 space-y-2">
-                  <h1 className="text-3xl font-extrabold tracking-tight">
+                  <h1
+                    className={`text-3xl font-extrabold tracking-tight ${
+                      previewTheme === 'dark' ? 'text-white' : 'text-slate-900'
+                    }`}
+                  >
                     {activeProject.title}
                   </h1>
                   {activeProject.description && (
                     <p
                       className={`text-sm leading-relaxed ${
-                        previewTheme === 'dark' ? 'text-slate-400' : 'text-slate-600'
+                        previewTheme === 'dark' ? 'text-slate-300' : 'text-slate-600'
                       }`}
                     >
                       {activeProject.description}
@@ -297,8 +301,8 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               <div
                 className={`p-5 rounded-xl border ${
                   previewTheme === 'dark'
-                    ? 'bg-slate-900/90 border-slate-800'
-                    : 'bg-slate-50 border-slate-200'
+                    ? 'bg-slate-850/90 border-slate-800 text-slate-200'
+                    : 'bg-slate-50 border-slate-200 text-slate-800'
                 }`}
               >
                 <div className="text-xs font-bold mb-3 flex items-center gap-1.5 uppercase tracking-wider text-primary">
@@ -310,7 +314,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                     <div key={idx} className="space-y-1.5">
                       {ch.title && (
                         <div
-                          className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
+                          className="text-[11px] font-bold uppercase tracking-wider"
                           style={{ color: accent }}
                         >
                           {ch.title}
@@ -323,7 +327,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                             onClick={() => scrollToStep(s.stepNumber)}
                             className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition-colors ${
                               previewTheme === 'dark'
-                                ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white'
+                                ? 'bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white border border-slate-750'
                                 : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 shadow-2xs'
                             }`}
                           >
@@ -353,7 +357,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                   {/* Step Section Header if present */}
                   {step.sectionTitle && (
                     <div
-                      className="text-xs font-bold uppercase tracking-wider pb-1 border-b border-border/40"
+                      className={`text-xs font-bold uppercase tracking-wider pb-1 border-b ${
+                        previewTheme === 'dark' ? 'border-slate-800' : 'border-slate-200'
+                      }`}
                       style={{ color: accent }}
                     >
                       {step.sectionTitle}
@@ -369,7 +375,11 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                       Step {step.stepNumber}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <h2 className="text-lg font-bold tracking-tight">
+                      <h2
+                        className={`text-lg font-bold tracking-tight ${
+                          previewTheme === 'dark' ? 'text-white' : 'text-slate-900'
+                        }`}
+                      >
                         {step.title}
                       </h2>
                       <div className="flex items-center gap-2 mt-1.5">
@@ -396,8 +406,8 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                             }}
                             className={`group inline-flex items-center gap-1 text-[10px] font-semibold uppercase px-2 py-0.5 rounded transition-colors ${
                               previewTheme === 'dark'
-                                ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
                             }`}
                             title="Click to edit application name"
                           >
@@ -412,8 +422,8 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                           onClick={() => handleCycleActionType(step)}
                           className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded transition-all hover:scale-105 active:scale-95 ${
                             previewTheme === 'dark'
-                              ? 'bg-primary/20 text-primary border border-primary/30'
-                              : 'bg-primary/10 text-primary border border-primary/20'
+                              ? 'bg-blue-950/80 text-blue-300 border border-blue-800/80'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
                           }`}
                           title="Click to cycle action type (Click, Double Click, Navigation, etc.)"
                         >
@@ -425,8 +435,10 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
                   {/* Step Instructions */}
                   <div
-                    className={`text-sm leading-relaxed pl-1 prose prose-sm max-w-none ${
-                      previewTheme === 'dark' ? 'prose-invert text-slate-200' : 'text-slate-800'
+                    className={`text-sm leading-relaxed pl-1 ${
+                      previewTheme === 'dark'
+                        ? 'text-slate-200 [&_p]:text-slate-200 [&_strong]:text-white [&_strong]:font-semibold [&_em]:text-slate-300 [&_code]:text-amber-300 [&_code]:bg-slate-800 [&_a]:text-blue-400'
+                        : 'text-slate-800 [&_p]:text-slate-800 [&_strong]:text-slate-900 [&_strong]:font-semibold [&_em]:text-slate-700 [&_code]:text-blue-700 [&_code]:bg-slate-100 [&_a]:text-blue-600'
                     }`}
                     dangerouslySetInnerHTML={{
                       __html: step.richInstructions || `<p>${step.title}</p>`,

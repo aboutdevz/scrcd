@@ -147,10 +147,49 @@ public class Program
         }
     }
 
+    private static string EscapeJson(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        StringBuilder sb = new StringBuilder();
+        foreach (char c in s)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '\"': sb.Append("\\\""); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (c < 32)
+                    {
+                        sb.AppendFormat("\\u{0:x4}", (int)c);
+                    }
+                    else
+                    {
+                        sb.Append(c);
+                    }
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
+
     public static int Main(string[] args)
     {
         try
         {
+            try
+            {
+                Stream stdout = Console.OpenStandardOutput();
+                StreamWriter writer = new StreamWriter(stdout, new UTF8Encoding(false));
+                writer.AutoFlush = true;
+                Console.SetOut(writer);
+            }
+            catch {}
+
             SetProcessDPIAware();
 
             string outputPath = args.Length > 0 ? args[0] : "screenshot.png";
@@ -295,19 +334,20 @@ public class Program
 
             DeleteObject(hBitmap);
 
-            string escapedTitle = windowTitle.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
-            string escapedElement = elementTitle.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
-            string escapedCtrl = controlType.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
-            string escapedProc = processName.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
+            string escapedTitle = EscapeJson(windowTitle);
+            string escapedElement = EscapeJson(elementTitle);
+            string escapedCtrl = EscapeJson(controlType);
+            string escapedProc = EscapeJson(processName);
+            string escapedPath = EscapeJson(outputPath.Replace("\\", "/"));
 
             Console.WriteLine(string.Format("{{\"success\":true,\"width\":{0},\"height\":{1},\"left\":{2},\"top\":{3},\"windowTitle\":\"{4}\",\"elementTitle\":\"{5}\",\"controlType\":\"{6}\",\"processName\":\"{7}\",\"path\":\"{8}\"}}",
-                cropW, cropH, cropX, cropY, escapedTitle, escapedElement, escapedCtrl, escapedProc, outputPath.Replace("\\", "/")));
+                cropW, cropH, cropX, cropY, escapedTitle, escapedElement, escapedCtrl, escapedProc, escapedPath));
 
             return 0;
         }
         catch (Exception ex)
         {
-            Console.WriteLine(string.Format("{{\"success\":false,\"error\":\"{0}\"}}", ex.Message.Replace("\"", "\\\"")));
+            Console.WriteLine(string.Format("{{\"success\":false,\"error\":\"{0}\"}}", EscapeJson(ex.Message)));
             return 1;
         }
     }
