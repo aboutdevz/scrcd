@@ -11,7 +11,7 @@ interface AppState {
   projects: Project[];
   activeProject: Project | null;
   loadProjects: () => Promise<void>;
-  createProject: (title: string, category?: string, description?: string) => Promise<Project>;
+  createProject: (title: string, category?: string, description?: string, version?: string) => Promise<Project>;
   updateProject: (project: Project) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   selectProject: (id: string) => Promise<void>;
@@ -62,7 +62,7 @@ interface AppState {
   aiConfig: import('@/types').AiConfig;
   setAiConfig: (config: Partial<import('@/types').AiConfig>) => void;
   applyAiWrittenContent: (
-    updates: { id: string; title: string; richInstructions: string }[],
+    updates: { id: string; title: string; richInstructions: string; sectionTitle?: string }[],
     projectTitle?: string
   ) => Promise<void>;
 
@@ -85,18 +85,20 @@ export const useStore = create<AppState>((set, get) => ({
     set({ projects });
   },
 
-  createProject: async (title, category = 'SOP', description = '') => {
+  createProject: async (title, category = 'SOP', description = '', version = '1.0.0') => {
     const id = `proj_${Date.now()}`;
     const branding = get().branding;
     const newProj: Project = {
       id,
       title: title || 'Untitled Guide',
+      version: version || '1.0.0',
       description,
       category: category as any,
       tags: [category],
       author: branding.author,
       companyName: branding.companyName,
       accentColor: branding.accentColor,
+      logoUrl: branding.logoUrl,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -399,6 +401,7 @@ export const useStore = create<AppState>((set, get) => ({
           ...s,
           title: u.title || s.title,
           richInstructions: u.richInstructions || s.richInstructions,
+          sectionTitle: u.sectionTitle !== undefined ? u.sectionTitle : s.sectionTitle,
         };
       }
       return s;

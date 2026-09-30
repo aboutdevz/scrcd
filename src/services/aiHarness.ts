@@ -4,6 +4,7 @@ export interface StepUpdateItem {
   id: string;
   title: string;
   richInstructions: string;
+  sectionTitle?: string;
 }
 
 export interface AiGeneratedResult {
@@ -149,15 +150,16 @@ export async function testAiConnection(config: AiConfig): Promise<{ success: boo
 function createFallbackStepItem(step: Step, stepIndex: number): StepUpdateItem {
   const target = step.uiaName || step.title || `Element ${stepIndex}`;
   const app = step.uiaAppName || 'Application';
-  const isSnapshot = step.actionType === 'snapshot';
-  const verb = isSnapshot ? 'Capture snapshot in' : 'Click on';
+  const isSnapshot = step.actionType === 'snapshot' || step.actionType === 'navigation';
+  const verb = isSnapshot ? 'View' : 'Click on';
 
   return {
     id: step.id,
     title: `${verb} ${target}`,
     richInstructions: isSnapshot
-      ? `<p>Capture a screen snapshot of <strong>${target}</strong> in <em>${app}</em>.</p>`
+      ? `<p>Review <strong>${target}</strong> in <em>${app}</em>.</p>`
       : `<p>Click on the <strong>${target}</strong> control in <em>${app}</em> to proceed with the procedure.</p>`,
+    sectionTitle: step.sectionTitle,
   };
 }
 
@@ -199,7 +201,6 @@ function repairTruncatedJson(json: string): string {
     s += '"';
   }
 
-  // Strip trailing comma before closing structures
   s = s.replace(/,\s*$/, '');
 
   while (stack.length > 0) {
@@ -220,15 +221,12 @@ function extractAndParseJson(rawText: string): any {
     return null;
   }
 
-  // 1. Strip reasoning / thinking tokens (DeepSeek R1, Qwen reasoning, etc.)
   let cleaned = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
-  // 2. Extract JSON block from markdown fences if present
   const markdownMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (markdownMatch && markdownMatch[1]) {
     cleaned = markdownMatch[1].trim();
   } else {
-    // Locate outer-most JSON object or array
     const firstBrace = cleaned.indexOf('{');
     const firstBracket = cleaned.indexOf('[');
     let startIdx = -1;
@@ -251,11 +249,9 @@ function extractAndParseJson(rawText: string): any {
     }
   }
 
-  // 3. Try standard parse
   try {
     return JSON.parse(cleaned);
   } catch {
-    // 4. Try parsing repaired JSON
     try {
       const repaired = repairTruncatedJson(cleaned);
       return JSON.parse(repaired);
@@ -266,8 +262,7 @@ function extractAndParseJson(rawText: string): any {
 }
 
 /**
- * Normalizes any parsed JSON structure (object with steps, array, or nested key)
- * into a standard StepUpdateItem list.
+ * Normalizes any parsed JSON structure into a standard StepUpdateItem list.
  */
 function normalizeParsedSteps(parsed: any, originalSteps: Step[]): { steps: StepUpdateItem[]; projectTitle?: string } {
   if (!parsed) {
@@ -288,7 +283,6 @@ function normalizeParsedSteps(parsed: any, originalSteps: Step[]): { steps: Step
   } else if (Array.isArray(parsed.data)) {
     rawList = parsed.data;
   } else {
-    // Search for first array property in object
     for (const key of Object.keys(parsed)) {
       if (Array.isArray(parsed[key]) && parsed[key].length > 0) {
         rawList = parsed[key];
@@ -304,7 +298,6 @@ function normalizeParsedSteps(parsed: any, originalSteps: Step[]): { steps: Step
     const item = rawList[i];
     if (!item) continue;
 
-    // Match id or fallback to corresponding original step id
     let matchedId = '';
     if (item.id && originalIds.has(String(item.id))) {
       matchedId = String(item.id);
@@ -321,6 +314,7 @@ function normalizeParsedSteps(parsed: any, originalSteps: Step[]): { steps: Step
           : item.title
           ? `<p>${item.title}</p>`
           : '',
+        sectionTitle: item.sectionTitle ? String(item.sectionTitle).trim() : undefined,
       });
     }
   }
@@ -329,54 +323,14 @@ function normalizeParsedSteps(parsed: any, originalSteps: Step[]): { steps: Step
 }
 
 /**
- * Executes a single AI batch request (10-12 steps)
+ * Universal completion request runner for any configured AI provider
  */
-async function executeAiBatch(
-  batch: Step[],
+async function callAiCompletion(
   config: AiConfig,
-  projectContext: { title: string; description?: string },
-  isFirstBatch: boolean,
-  batchOffset: number
-): Promise<{ steps: StepUpdateItem[]; projectTitle?: string }> {
-  const sequenceSummary = batch.map((s, idx) => ({
-    id: s.id,
-    stepIndex: batchOffset + idx + 1,
-    action: s.actionType,
-    application: s.uiaAppName || 'Application',
-    element: s.uiaName || s.title,
-    controlType: s.uiaControlType || 'UIElement',
-    currentTitle: s.title,
-  }));
-
-  const systemInstructions =
-    config.systemPrompt ||
-    `You are an expert technical writer and standard operating procedure (SOP) author.
-Your task is to analyze user-recorded workflow click sequences and write clear, action-oriented, professional guide titles and formatted instructions.
-
-Guidelines:
-1. "title": Must be concise, professional, imperative (e.g. "Open Account Settings", "Select Billing Tab", "Confirm Security Credentials").
-2. "richInstructions": Write 1-2 clear, polished sentences formatted in HTML with <p>, <strong>, and <em> tags highlighting button/field names (e.g. "<p>Click on the <strong>Save Changes</strong> button in <em>Settings</em> to apply the new configuration.</p>").
-3. Preserve the exact "id" for each step in your response.
-${isFirstBatch ? '4. Provide an updated overall "projectTitle" summarizing the workflow procedure.' : ''}
-5. Return strictly valid JSON with this exact schema:
-{
-  ${isFirstBatch ? '"projectTitle": "Polished Guide Title",' : ''}
-  "steps": [
-    {
-      "id": "step_id",
-      "title": "Action Title",
-      "richInstructions": "<p>Instruction text with <strong>Elements</strong> highlighted.</p>"
-    }
-  ]
-}
-Important: Do not output conversational filler or extensive reasoning. Return the JSON object directly.`;
-
-  const userPrompt = `Guide Topic: "${projectContext.title}"\n${
-    projectContext.description ? `Description: "${projectContext.description}"\n` : ''
-  }\nRecorded Steps (${batch.length} steps):\n${JSON.stringify(sequenceSummary, null, 2)}`;
-
-  let rawJsonText = '';
-
+  systemPrompt: string,
+  userPrompt: string,
+  isJson: boolean = true
+): Promise<string> {
   if (config.provider === 'openai' || config.provider === 'custom') {
     const baseUrl = (config.customBaseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
     const headers: Record<string, string> = {
@@ -392,7 +346,7 @@ Important: Do not output conversational filler or extensive reasoning. Return th
       body: JSON.stringify({
         model: config.model || (config.provider === 'openai' ? 'gpt-4o-mini' : 'llama3'),
         messages: [
-          { role: 'system', content: systemInstructions },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
         max_tokens: 4096,
@@ -406,22 +360,28 @@ Important: Do not output conversational filler or extensive reasoning. Return th
     }
 
     const data = await res.json();
-    rawJsonText = data.choices?.[0]?.message?.content || '';
-  } else if (config.provider === 'gemini') {
+    return data.choices?.[0]?.message?.content || '';
+  }
+
+  if (config.provider === 'gemini') {
     const model = config.model || 'gemini-1.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`;
+
+    const generationConfig: Record<string, any> = {
+      temperature: 0.3,
+      maxOutputTokens: 4096,
+    };
+    if (isJson) {
+      generationConfig.responseMimeType = 'application/json';
+    }
 
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstructions }] },
+        systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.3,
-          maxOutputTokens: 4096,
-        },
+        generationConfig,
       }),
     });
 
@@ -431,8 +391,10 @@ Important: Do not output conversational filler or extensive reasoning. Return th
     }
 
     const data = await res.json();
-    rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  } else if (config.provider === 'anthropic') {
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  }
+
+  if (config.provider === 'anthropic') {
     const url = 'https://api.anthropic.com/v1/messages';
     const res = await fetch(url, {
       method: 'POST',
@@ -444,7 +406,7 @@ Important: Do not output conversational filler or extensive reasoning. Return th
       },
       body: JSON.stringify({
         model: config.model || 'claude-3-5-haiku-20241022',
-        system: systemInstructions,
+        system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
         max_tokens: 4096,
         temperature: 0.3,
@@ -457,9 +419,109 @@ Important: Do not output conversational filler or extensive reasoning. Return th
     }
 
     const data = await res.json();
-    rawJsonText = data.content?.[0]?.text || '';
+    return data.content?.[0]?.text || '';
   }
 
+  throw new Error(`Unsupported AI provider: ${config.provider}`);
+}
+
+/**
+ * Rewrites a single step's instructions with flow awareness and formatting.
+ */
+export async function rewriteStepInstructions(
+  step: Step,
+  config: AiConfig,
+  context: { projectTitle: string; prevStepTitle?: string; nextStepTitle?: string; currentContent?: string }
+): Promise<{ title: string; richInstructions: string }> {
+  const systemInstructions =
+    `You are an expert technical writer and standard operating procedure (SOP) author.
+Your task is to rewrite and polish the following step's instructions to be professional, clear, and action-oriented.
+
+Guidelines:
+1. "title": Concise, imperative action title describing the user action (e.g. "Select Profile Tab", "Open Account Settings", "Submit Form"). NEVER simply repeat the raw application or window title.
+2. "richInstructions": 1-3 clear sentences formatted in HTML using <p>, <strong>, and <em> tags highlighting clicked elements or buttons.
+3. Return strictly valid JSON:
+{
+  "title": "Action Title",
+  "richInstructions": "<p>Instructions with <strong>elements</strong> highlighted.</p>"
+}
+Important: Do not output conversational commentary. Return the JSON object directly.`;
+
+  const userPrompt = `Guide Title: "${context.projectTitle}"
+Previous Step: ${context.prevStepTitle || 'None (First step)'}
+Next Step: ${context.nextStepTitle || 'None (Last step)'}
+Action Type: ${step.actionType}
+Application: "${step.uiaAppName || ''}"
+Target Element: "${step.uiaName || ''}"
+Control Type: "${step.uiaControlType || ''}"
+Current Title: "${step.title}"
+Current Instructions: "${context.currentContent || step.richInstructions || ''}"`;
+
+  const rawJson = await callAiCompletion(config, systemInstructions, userPrompt);
+  const parsed = extractAndParseJson(rawJson);
+
+  if (parsed && (parsed.title || parsed.richInstructions)) {
+    return {
+      title: parsed.title ? String(parsed.title).trim() : step.title,
+      richInstructions: parsed.richInstructions
+        ? String(parsed.richInstructions).trim()
+        : `<p>${parsed.title || step.title}</p>`,
+    };
+  }
+
+  throw new Error('AI returned an empty or unparseable response.');
+}
+
+/**
+ * Executes a single AI batch request (10-12 steps)
+ */
+async function executeAiBatch(
+  batch: Step[],
+  config: AiConfig,
+  projectContext: { title: string; description?: string },
+  isFirstBatch: boolean,
+  batchOffset: number,
+  groupByChapters: boolean = false
+): Promise<{ steps: StepUpdateItem[]; projectTitle?: string }> {
+  const sequenceSummary = batch.map((s, idx) => ({
+    id: s.id,
+    stepIndex: batchOffset + idx + 1,
+    action: s.actionType,
+    application: s.uiaAppName || 'Application',
+    element: s.uiaName || s.title,
+    controlType: s.uiaControlType || 'UIElement',
+    currentTitle: s.title,
+  }));
+
+  const systemInstructions =
+    config.systemPrompt ||
+    `You are an expert technical writer and standard operating procedure (SOP) author.
+Your task is to analyze user-recorded workflow sequences and write clear, action-oriented, professional guide titles and formatted instructions describing the user's flow.
+
+Guidelines:
+1. "title": Must be concise, professional, imperative describing the user action (e.g. "Select Profile Tab", "Open Account Settings", "Submit Form", "Download Installer"). NEVER simply repeat the raw application or window title.
+2. "richInstructions": Write 1-2 clear, polished procedural sentences formatted in HTML with <p>, <strong>, and <em> tags highlighting clicked elements or buttons (e.g. "<p>Click on the <strong>CV Experience</strong> tab in <em>READY</em> to view work records.</p>").
+${groupByChapters ? '3. "sectionTitle": Group related sequential steps into logical workflow chapters (e.g. "Chapter 1: User Login", "Chapter 2: Profile Setup", "Chapter 3: Verification").' : ''}
+4. Preserve the exact "id" for each step in your response.
+${isFirstBatch ? '5. Provide an updated overall "projectTitle" summarizing the complete guide.' : ''}
+6. Return strictly valid JSON:
+{
+  ${isFirstBatch ? '"projectTitle": "Polished Guide Title",' : ''}
+  "steps": [
+    {
+      "id": "step_id",
+      "title": "Action Title",
+      "richInstructions": "<p>Instruction text with <strong>Elements</strong> highlighted.</p>"${groupByChapters ? ',\n      "sectionTitle": "Chapter / Section Name"' : ''}
+    }
+  ]
+}
+Important: Do not output conversational commentary. Return the JSON object directly.`;
+
+  const userPrompt = `Guide Topic: "${projectContext.title}"\n${
+    projectContext.description ? `Description: "${projectContext.description}"\n` : ''
+  }\nRecorded Steps (${batch.length} steps):\n${JSON.stringify(sequenceSummary, null, 2)}`;
+
+  const rawJsonText = await callAiCompletion(config, systemInstructions, userPrompt);
   const parsed = extractAndParseJson(rawJsonText);
   return normalizeParsedSteps(parsed, batch);
 }
@@ -473,7 +535,8 @@ export async function autoWriteGuideContent(
   steps: Step[],
   config: AiConfig,
   projectContext: { title: string; description?: string },
-  onProgress?: (processed: number, total: number, message: string) => void
+  onProgress?: (processed: number, total: number, message: string) => void,
+  options?: { groupByChapters?: boolean }
 ): Promise<AiGeneratedResult> {
   if (steps.length === 0) {
     return { steps: [] };
@@ -482,6 +545,7 @@ export async function autoWriteGuideContent(
   const allResultSteps: StepUpdateItem[] = [];
   let detectedProjectTitle: string | undefined = undefined;
   let supplementedCount = 0;
+  const groupByChapters = Boolean(options?.groupByChapters);
 
   // Split steps into manageable batches (10-12 steps per batch)
   const batches: Step[][] = [];
@@ -500,7 +564,7 @@ export async function autoWriteGuideContent(
         steps.length,
         batches.length > 1
           ? `Writing steps ${startIndex + 1}–${endIndex} of ${steps.length}...`
-          : `Writing procedural content for ${steps.length} steps...`
+          : `Writing procedural flow for ${steps.length} steps...`
       );
     }
 
@@ -510,7 +574,8 @@ export async function autoWriteGuideContent(
         config,
         projectContext,
         bIdx === 0,
-        startIndex
+        startIndex,
+        groupByChapters
       );
 
       if (bIdx === 0 && batchResult.projectTitle) {
@@ -530,16 +595,15 @@ export async function autoWriteGuideContent(
             richInstructions:
               generated.richInstructions ||
               `<p>${generated.title || originalStep.title}</p>`,
+            sectionTitle: generated.sectionTitle || originalStep.sectionTitle,
           });
         } else {
-          // Gracefully supplement missing step from UIA metadata
           allResultSteps.push(createFallbackStepItem(originalStep, startIndex + i + 1));
           supplementedCount++;
         }
       }
     } catch (err: any) {
       console.warn(`AI batch ${bIdx + 1} encountered an error:`, err);
-      // Ensure the batch receives professional metadata fallbacks instead of crashing
       for (let i = 0; i < batch.length; i++) {
         allResultSteps.push(createFallbackStepItem(batch[i], startIndex + i + 1));
         supplementedCount++;
@@ -557,3 +621,4 @@ export async function autoWriteGuideContent(
     supplementedCount: supplementedCount > 0 ? supplementedCount : undefined,
   };
 }
+

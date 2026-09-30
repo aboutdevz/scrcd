@@ -6,11 +6,75 @@ export function generateHtml(
   branding: BrandingProfile
 ): string {
   const accent = branding.accentColor || '#2563eb';
+  const logo = project.logoUrl || branding.logoUrl;
+  const version = project.version || '1.0.0';
+
+  // Group steps by chapter/section
+  interface ChapterGroup {
+    title: string;
+    steps: Step[];
+  }
+  const chapters: ChapterGroup[] = [];
+  let currentChapter: ChapterGroup = { title: '', steps: [] };
+
+  for (const step of steps) {
+    if (step.sectionTitle && step.sectionTitle !== currentChapter.title) {
+      if (currentChapter.steps.length > 0) {
+        chapters.push(currentChapter);
+      }
+      currentChapter = { title: step.sectionTitle, steps: [step] };
+    } else {
+      currentChapter.steps.push(step);
+    }
+  }
+  if (currentChapter.steps.length > 0) {
+    chapters.push(currentChapter);
+  }
+
+  // Render Table of Contents
+  const tocHtml = steps.length > 2
+    ? `
+    <nav class="toc-container">
+      <div class="toc-header">
+        <h2 class="toc-heading">Table of Contents</h2>
+        <span class="toc-badge">${steps.length} Steps</span>
+      </div>
+      <div class="toc-list">
+        ${chapters
+          .map(
+            (ch) => `
+          <div class="toc-chapter">
+            ${ch.title ? `<div class="toc-chapter-title">${escapeHtml(ch.title)}</div>` : ''}
+            <ul class="toc-steps">
+              ${ch.steps
+                .map(
+                  (s) => `
+                <li class="toc-item">
+                  <a href="#step-${s.stepNumber}" class="toc-link">
+                    <span class="toc-step-num">Step ${s.stepNumber}</span>
+                    <span class="toc-step-title">${escapeHtml(s.title)}</span>
+                    <span class="toc-step-action">${escapeHtml(s.actionType.toUpperCase())}</span>
+                  </a>
+                </li>`
+                )
+                .join('\n')}
+            </ul>
+          </div>`
+          )
+          .join('\n')}
+      </div>
+    </nav>`
+    : '';
 
   const stepsHtml = steps
     .map(
       (step) => `
     <div class="step-card" id="step-${step.stepNumber}">
+      ${
+        step.sectionTitle
+          ? `<div class="step-section-header">${escapeHtml(step.sectionTitle)}</div>`
+          : ''
+      }
       <div class="step-header">
         <label class="step-checkbox-label">
           <input type="checkbox" class="step-checkbox" onchange="toggleStep(this)">
@@ -19,7 +83,7 @@ export function generateHtml(
         <div class="step-meta">
           <h2 class="step-title">${escapeHtml(step.title)}</h2>
           <div class="step-tags">
-            <span class="tag app-tag">${escapeHtml(step.uiaAppName || 'Desktop')}</span>
+            <span class="tag app-tag">${escapeHtml(step.uiaAppName || 'Application')}</span>
             <span class="tag action-tag">${escapeHtml(step.actionType.toUpperCase())}</span>
           </div>
         </div>
@@ -58,15 +122,15 @@ export function generateHtml(
       --accent: ${accent};
     }
     body.light {
-      --bg: #f8fafc;
+      --bg: #ffffff;
       --card-bg: #ffffff;
       --text: #0f172a;
-      --text-muted: #64748b;
+      --text-muted: #334155;
       --border: #e2e8f0;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       background-color: var(--bg);
       color: var(--text);
       line-height: 1.6;
@@ -90,7 +154,7 @@ export function generateHtml(
       color: var(--text);
       border-radius: 6px;
       cursor: pointer;
-      font-weight: 500;
+      font-weight: 600;
       font-size: 13px;
     }
     .btn:hover {
@@ -99,30 +163,131 @@ export function generateHtml(
     .guide-header {
       background: transparent;
       padding: 0 0 32px 0;
-      margin-bottom: 36px;
-      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+      border-bottom: 2px solid var(--border);
     }
     .guide-title {
       font-size: 28px;
       font-weight: 700;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       line-height: 1.3;
     }
     .guide-desc {
       color: var(--text-muted);
-      font-size: 16px;
-      margin-bottom: 20px;
+      font-size: 15px;
+      margin-bottom: 18px;
+    }
+    .guide-logo {
+      max-height: 60px;
+      max-width: 200px;
+      object-fit: contain;
+      border-radius: 6px;
     }
     .guide-meta {
       display: flex;
       flex-wrap: wrap;
       gap: 24px;
-      font-size: 14px;
+      font-size: 13px;
       color: var(--text-muted);
       padding-top: 4px;
     }
     .guide-meta strong {
       color: var(--text);
+    }
+
+    /* Table of Contents */
+    .toc-container {
+      padding: 24px 0;
+      margin-bottom: 36px;
+      border-bottom: 1px solid var(--border);
+    }
+    .toc-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .toc-heading {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .toc-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: rgba(148, 163, 184, 0.2);
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .toc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .toc-chapter-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .toc-steps {
+      list-style: none;
+      padding-left: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 8px;
+    }
+    .toc-item {
+      margin: 0;
+    }
+    .toc-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      text-decoration: none;
+      color: var(--text);
+      background: rgba(148, 163, 184, 0.08);
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    .toc-link:hover {
+      background: rgba(148, 163, 184, 0.2);
+    }
+    .toc-step-num {
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .toc-step-title {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .toc-step-action {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    /* Steps */
+    .step-section-header {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+      border-bottom: 1px dashed var(--border);
     }
     .step-card {
       background: transparent;
@@ -185,7 +350,7 @@ export function generateHtml(
       border-radius: 4px;
       background: rgba(148, 163, 184, 0.15);
       color: var(--text-muted);
-      font-weight: 500;
+      font-weight: 600;
     }
     .step-body {
       margin-top: 12px;
@@ -219,19 +384,91 @@ export function generateHtml(
       height: auto;
       display: block;
     }
+
+    /* Print Styles (Strict High Contrast WCAG AAA) */
     @media print {
-      body { background: #fff !important; color: #000 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        padding: 0 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
       .top-actions, .step-checkbox { display: none !important; }
-      .guide-header { border: none !important; border-bottom: 1px solid #ddd !important; background: transparent !important; color: #000 !important; page-break-after: avoid; }
-      .step-card { border: none !important; border-bottom: 1px solid #eee !important; background: transparent !important; color: #000 !important; page-break-inside: avoid; break-inside: avoid; }
+      .guide-header {
+        border: none !important;
+        border-bottom: 2px solid #cbd5e1 !important;
+        background: transparent !important;
+        color: #0f172a !important;
+        page-break-after: avoid;
+      }
+      .guide-title { color: #0f172a !important; }
+      .guide-desc { color: #334155 !important; }
+      .guide-meta { color: #334155 !important; }
+      .guide-meta strong { color: #0f172a !important; }
+      .toc-container {
+        border-bottom: 1px solid #cbd5e1 !important;
+        page-break-after: auto;
+      }
+      .toc-heading { color: #0f172a !important; }
+      .toc-chapter-title { color: #1e3a8a !important; }
+      .toc-link {
+        color: #0f172a !important;
+        background: #f8fafc !important;
+        border: 1px solid #e2e8f0 !important;
+      }
+      .toc-step-title { color: #0f172a !important; }
+      .toc-step-action {
+        color: #1e293b !important;
+        border: 1px solid #94a3b8 !important;
+        background: #f1f5f9 !important;
+      }
+      .step-section-header {
+        color: #1e3a8a !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+      }
+      .step-card {
+        border: none !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        background: transparent !important;
+        color: #0f172a !important;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
       .step-card:last-child { border-bottom: none !important; }
-      .step-badge { color: #fff !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-      .step-image-wrapper { border: none !important; box-shadow: none !important; page-break-inside: avoid; break-inside: avoid; }
-      .step-image { max-width: 100% !important; height: auto !important; display: block !important; }
+      .step-title { color: #0f172a !important; }
+      .tag {
+        color: #0f172a !important;
+        background: #f1f5f9 !important;
+        border: 1px solid #94a3b8 !important;
+        font-weight: 600 !important;
+      }
+      .step-instructions {
+        color: #000000 !important;
+      }
+      .step-instructions p {
+        color: #000000 !important;
+      }
+      .step-badge {
+        color: #ffffff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .step-image-wrapper {
+        border: none !important;
+        box-shadow: none !important;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      .step-image {
+        max-width: 100% !important;
+        height: auto !important;
+        display: block !important;
+      }
     }
   </style>
 </head>
-<body>
+<body class="light">
   <div class="container">
     <div class="top-actions">
       <button class="btn" onclick="document.body.classList.toggle('light')">Toggle Theme</button>
@@ -244,15 +481,18 @@ export function generateHtml(
           <h1 class="guide-title">${escapeHtml(project.title)}</h1>
           ${project.description ? `<p class="guide-desc">${escapeHtml(project.description)}</p>` : ''}
         </div>
-        ${branding.logoUrl ? `<img src="${branding.logoUrl}" alt="Logo" style="max-height: 54px; max-width: 180px; object-fit: contain; border-radius: 6px;" />` : ''}
+        ${logo ? `<img src="${logo}" alt="Logo" class="guide-logo" />` : ''}
       </div>
       <div class="guide-meta">
+        <div>Version: <strong>${escapeHtml(version)}</strong></div>
         <div>Author: <strong>${escapeHtml(project.author || branding.author)}</strong></div>
         <div>Organization: <strong>${escapeHtml(project.companyName || branding.companyName)}</strong></div>
         <div>Total Steps: <strong>${steps.length}</strong></div>
         <div>Last Updated: <strong>${new Date(project.updatedAt).toLocaleDateString()}</strong></div>
       </div>
     </header>
+
+    ${tocHtml}
 
     <main class="steps-container">
       ${stepsHtml}

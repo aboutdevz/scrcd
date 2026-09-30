@@ -11,8 +11,13 @@ if (-not (Test-Path $csc)) {
     $csc = "csc.exe"
 }
 
+$wpfDir = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\WPF"
+$uiClient = Join-Path $wpfDir "UIAutomationClient.dll"
+$uiTypes = Join-Path $wpfDir "UIAutomationTypes.dll"
+$winBase = Join-Path $wpfDir "WindowsBase.dll"
+
 Write-Host "Compiling tools/CaptureScreen.cs -> bin/capture.exe..."
-& $csc /nologo /optimize /target:winexe /out:"$binDir\capture.exe" "$PSScriptRoot\CaptureScreen.cs"
+& $csc /nologo /optimize /target:winexe /r:"$uiClient","$uiTypes","$winBase" /out:"$binDir\capture.exe" "$PSScriptRoot\CaptureScreen.cs"
 
 Write-Host "Compiling tools/MouseHook.cs -> bin/hook.exe..."
 & $csc /nologo /optimize /target:winexe /out:"$binDir\hook.exe" "$PSScriptRoot\MouseHook.cs"

@@ -5,7 +5,7 @@ import { WysiwygEditor } from './WysiwygEditor';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { ConfirmModal } from '@/components/common/ConfirmModal';
 import { AiHarnessModal } from './AiHarnessModal';
-import { AnnotationTool, AnnotationShape, Step } from '@/types';
+import { AnnotationTool, AnnotationShape, Step, ActionType } from '@/types';
 import {
   MousePointer,
   CircleDot,
@@ -694,11 +694,23 @@ export const EditorView: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Step {activeStep.stepNumber} Details
+                Step {activeStep.stepNumber}
               </span>
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
-                {activeStep.actionType.toUpperCase()}
-              </span>
+              <select
+                value={activeStep.actionType}
+                onChange={(e) =>
+                  updateStep({ ...activeStep, actionType: e.target.value as ActionType })
+                }
+                className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:bg-primary/20 transition-colors"
+                title="Change Action Type"
+              >
+                <option value="click">CLICK</option>
+                <option value="double_click">DOUBLE CLICK</option>
+                <option value="right_click">RIGHT CLICK</option>
+                <option value="navigation">NAVIGATION</option>
+                <option value="keypress">KEYPRESS</option>
+                <option value="snapshot">SNAPSHOT</option>
+              </select>
             </div>
             <button
               onClick={() => setIsRightCollapsed(true)}
@@ -740,6 +752,19 @@ export const EditorView: React.FC = () => {
             <WysiwygEditor
               content={activeStep.richInstructions}
               onChange={handleRichInstructionsChange}
+              step={activeStep}
+              stepContext={{
+                title: activeStep.title,
+                actionType: activeStep.actionType,
+                uiaName: activeStep.uiaName,
+                uiaControlType: activeStep.uiaControlType,
+                uiaAppName: activeStep.uiaAppName,
+                stepNumber: activeStep.stepNumber,
+              }}
+              projectContext={{
+                title: activeProject?.title,
+                description: activeProject?.description,
+              }}
             />
           </div>
 
@@ -753,24 +778,31 @@ export const EditorView: React.FC = () => {
                 </span>
               )}
             </div>
-            <div className="space-y-1 text-muted-foreground text-[11px]">
-              <div className="flex justify-between">
+            <div className="space-y-1.5 text-muted-foreground text-[11px]">
+              <div className="flex justify-between items-center">
                 <span>Element:</span>
-                <span className="font-medium text-foreground truncate max-w-[130px]">
+                <span className="font-medium text-foreground truncate max-w-[130px]" title={activeStep.uiaName || 'None'}>
                   {activeStep.uiaName || 'None'}
                 </span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span>Control Type:</span>
                 <span className="text-foreground">{activeStep.uiaControlType || 'Window'}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Application:</span>
-                <span className="text-foreground truncate max-w-[130px]">
-                  {activeStep.uiaAppName || 'Desktop'}
-                </span>
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50">
+                <span className="shrink-0 text-muted-foreground">Application:</span>
+                <input
+                  type="text"
+                  placeholder="e.g. Google Chrome"
+                  value={activeStep.uiaAppName || ''}
+                  onChange={(e) =>
+                    updateStep({ ...activeStep, uiaAppName: e.target.value })
+                  }
+                  className="px-2 py-0.5 rounded bg-secondary/70 border border-border text-foreground text-xs w-full text-right focus:outline-none focus:ring-1 focus:ring-primary/40"
+                  title="Target Application (Editable)"
+                />
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span>Click Coordinates:</span>
                 <span className="font-mono text-foreground">
                   ({Math.round(activeStep.clickX)}, {Math.round(activeStep.clickY)})

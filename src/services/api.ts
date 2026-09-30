@@ -54,8 +54,10 @@ export const api = {
     }
     try {
       let parsed: Project[] = JSON.parse(raw);
-      // Clean up legacy demo projects
-      const filtered = parsed.filter((p) => !p.id.startsWith('proj_demo_'));
+      // Clean up legacy demo projects and ensure version exists
+      const filtered = parsed
+        .filter((p) => !p.id.startsWith('proj_demo_'))
+        .map((p) => ({ ...p, version: p.version || '1.0.0' }));
       if (filtered.length !== parsed.length) {
         localStorage.setItem('scrcd_projects', JSON.stringify(filtered));
       }

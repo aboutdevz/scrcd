@@ -4,6 +4,8 @@ using System.Text;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
+using System.Windows.Automation;
 
 public class Program
 {
@@ -31,6 +33,9 @@ public class Program
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT { public int x; public int y; }
@@ -81,12 +86,67 @@ public class Program
     private const int SRCCOPY = 0x00CC0020;
     private const int CAPTUREBLT = 0x40000000;
 
-    // Args:
-    // args[0] = outputPath
-    // args[1] = mode: "window" | "cursor" | "monitor" | "all"
-    // args[2] = clickX (optional)
-    // args[3] = clickY (optional)
-    // args[4..7] = optional explicit bounds: X Y W H
+    private static void GetElementDetails(int x, int y, IntPtr fgHwnd, out string elementTitle, out string controlType, out string processName)
+    {
+        elementTitle = "";
+        controlType = "";
+        processName = "";
+
+        try
+        {
+            if (fgHwnd != IntPtr.Zero)
+            {
+                uint pid = 0;
+                GetWindowThreadProcessId(fgHwnd, out pid);
+                if (pid != 0)
+                {
+                    Process p = Process.GetProcessById((int)pid);
+                    processName = p.ProcessName;
+                }
+            }
+        }
+        catch {}
+
+        try
+        {
+            AutomationElement el = AutomationElement.FromPoint(new System.Windows.Point(x, y));
+            if (el != null)
+            {
+                string name = el.Current.Name;
+                string ctrl = el.Current.ControlType != null ? el.Current.ControlType.ProgrammaticName : "";
+                if (!string.IsNullOrEmpty(ctrl) && ctrl.StartsWith("ControlType."))
+                {
+                    ctrl = ctrl.Substring("ControlType.".Length);
+                }
+
+                // If name is empty, traverse up to 3 parent levels to find a labeled container
+                if (string.IsNullOrEmpty(name))
+                {
+                    TreeWalker walker = TreeWalker.ControlViewWalker;
+                    AutomationElement parent = walker.GetParent(el);
+                    int depth = 0;
+                    while (parent != null && depth < 3)
+                    {
+                        if (!string.IsNullOrEmpty(parent.Current.Name))
+                        {
+                            name = parent.Current.Name;
+                            break;
+                        }
+                        parent = walker.GetParent(parent);
+                        depth++;
+                    }
+                }
+
+                elementTitle = name != null ? name.Trim() : "";
+                controlType = ctrl != null ? ctrl.Trim() : "";
+            }
+        }
+        catch
+        {
+            // Fallback gracefully on timeout or permission
+        }
+    }
+
     public static int Main(string[] args)
     {
         try
@@ -129,7 +189,13 @@ public class Program
                 }
             }
 
-            // 2. Determine Monitor Bounds for the Click
+            // 2. Extract UI Automation details
+            string elementTitle = "";
+            string controlType = "";
+            string processName = "";
+            GetElementDetails(clickX, clickY, fgHwnd, out elementTitle, out controlType, out processName);
+
+            // 3. Determine Monitor Bounds for the Click
             POINT pt = new POINT { x = clickX, y = clickY };
             IntPtr hMonitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
             MONITORINFO mi = new MONITORINFO();
@@ -140,7 +206,7 @@ public class Program
             int monW = monRect.Right - monRect.Left;
             int monH = monRect.Bottom - monRect.Top;
 
-            // 3. Determine Capture Bounding Box (cropX, cropY, cropW, cropH)
+            // 4. Determine Capture Bounding Box (cropX, cropY, cropW, cropH)
             int cropX = 0;
             int cropY = 0;
             int cropW = 1920;
@@ -148,7 +214,6 @@ public class Program
 
             if (mode == "window" && hasValidWinRect)
             {
-                // Capture only the active window rectangle!
                 cropX = winRect.Left;
                 cropY = winRect.Top;
                 cropW = winRect.Right - winRect.Left;
@@ -156,14 +221,12 @@ public class Program
             }
             else if (mode == "cursor")
             {
-                // Smart focus: Area near the cursor (e.g. 1280x750 or 1000x650)
                 int focusW = Math.Min(1200, monW);
                 int focusH = Math.Min(750, monH);
 
                 cropX = clickX - (focusW / 2);
                 cropY = clickY - (focusH / 2);
 
-                // Clamp to monitor boundaries
                 if (cropX < monRect.Left) cropX = monRect.Left;
                 if (cropY < monRect.Top) cropY = monRect.Top;
                 if (cropX + focusW > monRect.Right) cropX = monRect.Right - focusW;
@@ -174,7 +237,6 @@ public class Program
             }
             else if (mode == "monitor")
             {
-                // Capture the single monitor containing the click (or explicit monitor bounds if given)
                 if (args.Length >= 8)
                 {
                     int.TryParse(args[4], out cropX);
@@ -192,7 +254,6 @@ public class Program
             }
             else if (mode == "all")
             {
-                // All monitors virtual screen
                 cropX = GetSystemMetrics(SM_XVIRTUALSCREEN);
                 cropY = GetSystemMetrics(SM_YVIRTUALSCREEN);
                 cropW = GetSystemMetrics(SM_CXVIRTUALSCREEN);
@@ -200,18 +261,16 @@ public class Program
             }
             else
             {
-                // Default fallback: Single monitor where click happened (never stretch across multi-monitors!)
                 cropX = monRect.Left;
                 cropY = monRect.Top;
                 cropW = monW;
                 cropH = monH;
             }
 
-            // Safety sanity checks
             if (cropW <= 0) cropW = 1920;
             if (cropH <= 0) cropH = 1080;
 
-            // 4. BitBlt Screen DC to Memory DC
+            // 5. BitBlt Screen DC to Memory DC
             IntPtr hdcScreen = GetDC(IntPtr.Zero);
             IntPtr hdcMem = CreateCompatibleDC(hdcScreen);
             IntPtr hBitmap = CreateCompatibleBitmap(hdcScreen, cropW, cropH);
@@ -223,7 +282,7 @@ public class Program
             DeleteDC(hdcMem);
             ReleaseDC(IntPtr.Zero, hdcScreen);
 
-            // 5. Save to disk
+            // 6. Save to disk
             using (Bitmap bmp = Image.FromHbitmap(hBitmap))
             {
                 string dir = Path.GetDirectoryName(outputPath);
@@ -237,9 +296,12 @@ public class Program
             DeleteObject(hBitmap);
 
             string escapedTitle = windowTitle.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
+            string escapedElement = elementTitle.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
+            string escapedCtrl = controlType.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
+            string escapedProc = processName.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
 
-            Console.WriteLine(string.Format("{{\"success\":true,\"width\":{0},\"height\":{1},\"left\":{2},\"top\":{3},\"windowTitle\":\"{4}\",\"path\":\"{5}\"}}",
-                cropW, cropH, cropX, cropY, escapedTitle, outputPath.Replace("\\", "/")));
+            Console.WriteLine(string.Format("{{\"success\":true,\"width\":{0},\"height\":{1},\"left\":{2},\"top\":{3},\"windowTitle\":\"{4}\",\"elementTitle\":\"{5}\",\"controlType\":\"{6}\",\"processName\":\"{7}\",\"path\":\"{8}\"}}",
+                cropW, cropH, cropX, cropY, escapedTitle, escapedElement, escapedCtrl, escapedProc, outputPath.Replace("\\", "/")));
 
             return 0;
         }

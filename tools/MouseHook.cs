@@ -7,14 +7,28 @@ using System.Runtime.InteropServices;
 public class Program
 {
     private const int WH_MOUSE_LL = 14;
+    private const int WH_KEYBOARD_LL = 13;
     private const int WM_LBUTTONDOWN = 0x0201;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int VK_RETURN = 0x0D;
+
+    private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    private const uint WINEVENT_OUTOFCONTEXT = 0;
 
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
-    private static LowLevelMouseProc _proc = HookCallback;
-    private static IntPtr _hookID = IntPtr.Zero;
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+    private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+
+    private static LowLevelMouseProc _mouseProc = MouseHookCallback;
+    private static LowLevelKeyboardProc _kbProc = KeyboardHookCallback;
+    private static WinEventDelegate _winEventProc = WinEventCallback;
+
+    private static IntPtr _mouseHookID = IntPtr.Zero;
+    private static IntPtr _kbHookID = IntPtr.Zero;
+    private static IntPtr _winEventHookID = IntPtr.Zero;
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct POINT { public int x; public int y; }
+    public struct POINT { public int x; public int y; }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MSLLHOOKSTRUCT
@@ -26,8 +40,21 @@ public class Program
         public IntPtr dwExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KBDLLHOOKSTRUCT
+    {
+        public uint vkCode;
+        public uint scanCode;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
 
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -35,6 +62,18 @@ public class Program
 
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr GetModuleHandle(string lpModuleName);
@@ -65,7 +104,16 @@ public class Program
     public static void Main()
     {
         SetProcessDPIAware();
-        _hookID = SetHook(_proc);
+
+        using (Process curProcess = Process.GetCurrentProcess())
+        using (ProcessModule curModule = curProcess.MainModule)
+        {
+            IntPtr moduleHandle = GetModuleHandle(curModule.ModuleName);
+            _mouseHookID = SetWindowsHookEx(WH_MOUSE_LL, _mouseProc, moduleHandle, 0);
+            _kbHookID = SetWindowsHookEx(WH_KEYBOARD_LL, _kbProc, moduleHandle, 0);
+        }
+
+        _winEventHookID = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _winEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
 
         // Keep running until process is terminated
         MSG msg;
@@ -75,19 +123,12 @@ public class Program
             DispatchMessage(ref msg);
         }
 
-        UnhookWindowsHookEx(_hookID);
+        if (_mouseHookID != IntPtr.Zero) UnhookWindowsHookEx(_mouseHookID);
+        if (_kbHookID != IntPtr.Zero) UnhookWindowsHookEx(_kbHookID);
+        if (_winEventHookID != IntPtr.Zero) UnhookWinEvent(_winEventHookID);
     }
 
-    private static IntPtr SetHook(LowLevelMouseProc proc)
-    {
-        using (Process curProcess = Process.GetCurrentProcess())
-        using (ProcessModule curModule = curProcess.MainModule)
-        {
-            return SetWindowsHookEx(WH_MOUSE_LL, proc, GetModuleHandle(curModule.ModuleName), 0);
-        }
-    }
-
-    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private static IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0 && wParam == (IntPtr)WM_LBUTTONDOWN)
         {
@@ -95,6 +136,40 @@ public class Program
             Console.WriteLine(string.Format("{{\"type\":\"click\",\"button\":1,\"x\":{0},\"y\":{1}}}", hookStruct.pt.x, hookStruct.pt.y));
             Console.Out.Flush();
         }
-        return CallNextHookEx(_hookID, nCode, wParam, lParam);
+        return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
+    }
+
+    private static IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN)
+        {
+            KBDLLHOOKSTRUCT kbd = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+            if (kbd.vkCode == VK_RETURN)
+            {
+                POINT pt;
+                GetCursorPos(out pt);
+                Console.WriteLine(string.Format("{{\"type\":\"keypress\",\"key\":\"Enter\",\"x\":{0},\"y\":{1}}}", pt.x, pt.y));
+                Console.Out.Flush();
+            }
+        }
+        return CallNextHookEx(_kbHookID, nCode, wParam, lParam);
+    }
+
+    private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
+    {
+        if (eventType == EVENT_SYSTEM_FOREGROUND && hwnd != IntPtr.Zero)
+        {
+            StringBuilder sb = new StringBuilder(512);
+            if (GetWindowText(hwnd, sb, 512) > 0)
+            {
+                string title = sb.ToString().Trim();
+                if (!string.IsNullOrEmpty(title))
+                {
+                    string escaped = title.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " ");
+                    Console.WriteLine(string.Format("{{\"type\":\"window_focus\",\"windowTitle\":\"{0}\",\"hwnd\":{1}}}", escaped, hwnd.ToInt64()));
+                    Console.Out.Flush();
+                }
+            }
+        }
     }
 }

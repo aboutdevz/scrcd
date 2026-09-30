@@ -20,6 +20,7 @@ import {
   X,
   Palette,
   Download,
+  Upload,
 } from 'lucide-react';
 
 interface ExportModalProps {
@@ -41,7 +42,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   const [customAuthor, setCustomAuthor] = useState(branding.author);
   const [customCompany, setCustomCompany] = useState(branding.companyName);
   const [customAccent, setCustomAccent] = useState(branding.accentColor);
+  const [customLogoUrl, setCustomLogoUrl] = useState(activeProject?.logoUrl || branding.logoUrl || '');
   const [gifDuration, setGifDuration] = useState(1.2);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) setCustomLogoUrl(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
 
   if (!isOpen || !activeProject) return null;
 
@@ -107,6 +120,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
       author: customAuthor,
       companyName: customCompany,
       accentColor: customAccent,
+      logoUrl: customLogoUrl.trim() || undefined,
     };
 
     const sanitizedTitle = activeProject.title.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
@@ -314,6 +328,53 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                     className="w-8 h-8 rounded border border-border cursor-pointer bg-transparent"
                   />
                   <span className="font-mono text-xs text-muted-foreground">{customAccent}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Custom Logo Override */}
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[11px] text-muted-foreground font-medium">Document Logo (Optional)</label>
+              <div className="flex items-center gap-3">
+                {customLogoUrl ? (
+                  <div className="relative group">
+                    <img
+                      src={customLogoUrl}
+                      alt="Logo"
+                      className="h-8 w-auto max-w-[80px] object-contain rounded border border-border p-0.5 bg-secondary/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCustomLogoUrl('')}
+                      className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors shadow-sm"
+                      title="Remove Logo"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="h-8 w-16 rounded border border-dashed border-border flex items-center justify-center text-[9px] text-muted-foreground bg-secondary/20">
+                    No Logo
+                  </div>
+                )}
+                <div className="flex-1 flex items-center gap-2">
+                  <label className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-xs font-medium text-foreground cursor-pointer transition-colors shrink-0">
+                    <Upload className="w-3 h-3 text-primary" />
+                    <span>Upload</span>
+                    <input
+                      type="file"
+                      accept="image/png, image/jpeg, image/svg+xml, image/webp"
+                      onChange={handleLogoUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Or enter logo URL / base64"
+                    value={customLogoUrl}
+                    onChange={(e) => setCustomLogoUrl(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-secondary/50 border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
                 </div>
               </div>
             </div>

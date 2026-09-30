@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '@/store/useStore';
-import { autoWriteGuideContent, testAiConnection, AI_PROVIDER_DEFAULTS, StepUpdateItem } from '@/services/aiHarness';
+import { autoWriteGuideContent, AI_PROVIDER_DEFAULTS, StepUpdateItem } from '@/services/aiHarness';
 import { AiProvider } from '@/types';
 import {
   Bot,
@@ -9,10 +9,10 @@ import {
   CheckCircle,
   AlertCircle,
   Key,
-  Sparkles,
   ArrowRight,
   Settings,
   RefreshCw,
+  Layers,
 } from 'lucide-react';
 
 interface AiHarnessModalProps {
@@ -33,6 +33,7 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
   } | null>(null);
 
   const [progressStatus, setProgressStatus] = useState<{ current: number; total: number; message: string } | null>(null);
+  const [groupByChapters, setGroupByChapters] = useState(false);
 
   // Quick inline API Key state if empty
   const [inlineKey, setInlineKey] = useState(aiConfig.apiKey);
@@ -61,7 +62,6 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
       message: `Analyzing ${steps.length} recorded steps...`,
     });
 
-    // Save inline key if changed
     if (inlineKey.trim() !== aiConfig.apiKey) {
       handleSaveInlineCredentials();
     }
@@ -83,7 +83,8 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
         },
         (current, total, message) => {
           setProgressStatus({ current, total, message });
-        }
+        },
+        { groupByChapters }
       );
 
       if (!results.steps || results.steps.length === 0) {
@@ -131,7 +132,7 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
         </div>
 
         {/* Body */}
-        <div className="p-6 overflow-y-auto space-y-6">
+        <div className="p-6 overflow-y-auto space-y-5">
           {/* Key & Provider Status */}
           {!hasKey ? (
             <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-3">
@@ -208,6 +209,25 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
             </div>
           )}
 
+          {/* Chapter / Section Grouping Toggle */}
+          <label className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-secondary/20 cursor-pointer hover:bg-secondary/40 transition-colors">
+            <input
+              type="checkbox"
+              checked={groupByChapters}
+              onChange={(e) => setGroupByChapters(e.target.checked)}
+              className="w-4 h-4 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
+            />
+            <div className="flex-1">
+              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-primary" />
+                Group steps into Chapters / Sections
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Synthesize structured workflow sections (e.g. Chapter 1: Authentication, Chapter 2: Configuration)
+              </div>
+            </div>
+          </label>
+
           {errorMsg && (
             <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-500 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -244,7 +264,7 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <span className="text-xs font-bold text-emerald-500 flex items-center gap-1.5">
                   <CheckCircle className="w-4 h-4" />
-                  Generated Content for {generatedResults.steps.length} Steps
+                  Generated Flow for {generatedResults.steps.length} Steps
                 </span>
                 <div className="flex items-center gap-2">
                   {generatedResults.supplementedCount && generatedResults.supplementedCount > 0 && (
@@ -254,7 +274,7 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
                   )}
                   {generatedResults.projectTitle && (
                     <span className="text-[11px] text-muted-foreground truncate max-w-[240px]">
-                      New Title: <strong>{generatedResults.projectTitle}</strong>
+                      Title: <strong>{generatedResults.projectTitle}</strong>
                     </span>
                   )}
                 </div>
@@ -268,6 +288,11 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
                       key={item.id}
                       className="p-3 rounded-xl border border-border bg-card/60 space-y-1.5 text-xs"
                     >
+                      {item.sectionTitle && (
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-primary">
+                          {item.sectionTitle}
+                        </div>
+                      )}
                       <div className="flex items-center justify-between text-muted-foreground text-[10px]">
                         <span>Step {idx + 1}</span>
                         <span className="line-through truncate max-w-[200px]">{originalStep?.title}</span>
@@ -325,7 +350,7 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
                 {isLoading ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Writing Procedural Content...
+                    Writing Procedural Flow...
                   </>
                 ) : (
                   <>

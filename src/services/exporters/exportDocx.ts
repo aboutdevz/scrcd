@@ -96,6 +96,33 @@ export async function generateDocx(
 ): Promise<Blob> {
   const sectionsContent: any[] = [];
   const primaryColor = sanitizeHexColor(branding.accentColor);
+  const logoUrl = project.logoUrl || branding.logoUrl;
+
+  // Custom Logo Embedding in Header
+  if (logoUrl) {
+    try {
+      const logoBytes = await urlToUint8Array(logoUrl);
+      if (logoBytes && logoBytes.length > 0) {
+        sectionsContent.push(
+          new Paragraph({
+            children: [
+              new ImageRun({
+                data: logoBytes,
+                type: 'png',
+                transformation: {
+                  width: 140,
+                  height: 45,
+                },
+              }),
+            ],
+            spacing: { after: 200 },
+          })
+        );
+      }
+    } catch (err) {
+      console.warn('Failed to embed logo in docx:', err);
+    }
+  }
 
   // Title & Metadata
   sectionsContent.push(
@@ -106,10 +133,12 @@ export async function generateDocx(
     }),
     new Paragraph({
       children: [
+        new TextRun({ text: 'Version: ', bold: true }),
+        new TextRun({ text: `${cleanXmlText(project.version || '1.0.0')}   |   ` }),
         new TextRun({ text: 'Author: ', bold: true }),
-        new TextRun({ text: `${cleanXmlText(project.author || branding.author || 'Author')}  |  ` }),
+        new TextRun({ text: `${cleanXmlText(project.author || branding.author || 'Author')}   |   ` }),
         new TextRun({ text: 'Organization: ', bold: true }),
-        new TextRun({ text: `${cleanXmlText(project.companyName || branding.companyName || 'Organization')}  |  ` }),
+        new TextRun({ text: `${cleanXmlText(project.companyName || branding.companyName || 'Organization')}   |   ` }),
         new TextRun({ text: 'Date: ', bold: true }),
         new TextRun({ text: new Date(project.updatedAt || Date.now()).toLocaleDateString() }),
       ],
@@ -125,7 +154,54 @@ export async function generateDocx(
           new TextRun({ text: 'Overview: ', bold: true, italics: true }),
           new TextRun({ text: cleanDesc, italics: true }),
         ],
-        spacing: { after: 400 },
+        spacing: { after: 300 },
+      })
+    );
+  }
+
+  // Chapter-based Table of Contents
+  if (steps.length > 2) {
+    sectionsContent.push(
+      new Paragraph({
+        text: 'Table of Contents',
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 200, after: 150 },
+      })
+    );
+
+    let lastSection = '';
+    for (const step of steps) {
+      if (step.sectionTitle && step.sectionTitle !== lastSection) {
+        lastSection = step.sectionTitle;
+        sectionsContent.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: cleanXmlText(lastSection),
+                bold: true,
+                color: primaryColor,
+                size: 22,
+              }),
+            ],
+            spacing: { before: 140, after: 60 },
+          })
+        );
+      }
+      sectionsContent.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: `    Step ${step.stepNumber}: `, bold: true, size: 20 }),
+            new TextRun({ text: `${cleanXmlText(step.title || 'Untitled Step')}`, size: 20 }),
+          ],
+          spacing: { after: 50 },
+        })
+      );
+    }
+
+    sectionsContent.push(
+      new Paragraph({
+        text: '',
+        spacing: { after: 300 },
       })
     );
   }
@@ -143,6 +219,22 @@ export async function generateDocx(
   for (const step of steps) {
     const cleanStepTitle = cleanXmlText(step.title) || `Step ${step.stepNumber}`;
 
+    if (step.sectionTitle) {
+      sectionsContent.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: cleanXmlText(step.sectionTitle),
+              bold: true,
+              size: 22,
+              color: primaryColor,
+            }),
+          ],
+          spacing: { before: 240, after: 100 },
+        })
+      );
+    }
+
     // Step Heading
     sectionsContent.push(
       new Paragraph({
@@ -154,7 +246,7 @@ export async function generateDocx(
             color: primaryColor,
           }),
         ],
-        spacing: { before: 300, after: 120 },
+        spacing: { before: 200, after: 120 },
       })
     );
 
@@ -217,6 +309,15 @@ export async function generateDocx(
   }
 
   const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: {
+            font: 'Arial',
+          },
+        },
+      },
+    },
     sections: [
       {
         properties: {},

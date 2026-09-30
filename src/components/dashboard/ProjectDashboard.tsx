@@ -40,6 +40,7 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
   const [isCreating, setIsCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState<CategoryType>('SOP');
+  const [newVersion, setNewVersion] = useState('1.0.0');
   const [newDesc, setNewDesc] = useState('');
   const [guideToDelete, setGuideToDelete] = useState<string | null>(null);
 
@@ -47,6 +48,7 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
   const [projectToRename, setProjectToRename] = useState<Project | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
   const [renameCategory, setRenameCategory] = useState<CategoryType>('SOP');
+  const [renameVersion, setRenameVersion] = useState('1.0.0');
   const [renameDesc, setRenameDesc] = useState('');
 
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +58,7 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
     setProjectToRename(project);
     setRenameTitle(project.title);
     setRenameCategory(project.category);
+    setRenameVersion(project.version || '1.0.0');
     setRenameDesc(project.description || '');
   };
 
@@ -65,6 +68,7 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
       ...projectToRename,
       title: renameTitle.trim(),
       category: renameCategory,
+      version: renameVersion.trim() || '1.0.0',
       description: renameDesc.trim(),
       updatedAt: Date.now(),
     });
@@ -96,9 +100,10 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    await createProject(newTitle.trim(), newCategory, newDesc.trim());
+    await createProject(newTitle.trim(), newCategory, newDesc.trim(), newVersion.trim() || '1.0.0');
     setNewTitle('');
     setNewDesc('');
+    setNewVersion('1.0.0');
     setIsCreating(false);
   };
 
@@ -245,6 +250,9 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                   <div className="flex items-center gap-2 text-primary">
                     <FileText className="w-4 h-4" />
                     <span className="text-xs font-medium text-muted-foreground">{project.category}</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary text-muted-foreground border border-border">
+                      v{project.version || '1.0.0'}
+                    </span>
                   </div>
                   <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-2">
                     {project.title}
@@ -320,20 +328,34 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-foreground mb-1.5">
-                    Category
-                  </label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value as CategoryType)}
-                    className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  >
-                    <option value="SOP">Standard Operating Procedure (SOP)</option>
-                    <option value="Tutorial">Tutorial / Walkthrough</option>
-                    <option value="Onboarding">Employee Onboarding</option>
-                    <option value="Troubleshooting">Troubleshooting Guide</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-foreground mb-1.5">
+                      Category
+                    </label>
+                    <select
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value as CategoryType)}
+                      className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      <option value="SOP">Standard Operating Procedure (SOP)</option>
+                      <option value="Tutorial">Tutorial / Walkthrough</option>
+                      <option value="Onboarding">Employee Onboarding</option>
+                      <option value="Troubleshooting">Troubleshooting Guide</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-foreground mb-1.5">
+                      Version
+                    </label>
+                    <input
+                      type="text"
+                      value={newVersion}
+                      onChange={(e) => setNewVersion(e.target.value)}
+                      placeholder="1.0.0"
+                      className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -404,19 +426,31 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-foreground mb-1 block">Category</label>
-                  <select
-                    value={renameCategory}
-                    onChange={(e) => setRenameCategory(e.target.value as CategoryType)}
-                    className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {categories.filter((c) => c !== 'All').map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-foreground mb-1 block">Category</label>
+                    <select
+                      value={renameCategory}
+                      onChange={(e) => setRenameCategory(e.target.value as CategoryType)}
+                      className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      {categories.filter((c) => c !== 'All').map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-foreground mb-1 block">Version</label>
+                    <input
+                      type="text"
+                      value={renameVersion}
+                      onChange={(e) => setRenameVersion(e.target.value)}
+                      placeholder="1.0.0"
+                      className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                    />
+                  </div>
                 </div>
 
                 <div>

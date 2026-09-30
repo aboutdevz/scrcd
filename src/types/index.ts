@@ -1,10 +1,11 @@
-export type ActionType = 'click' | 'double_click' | 'right_click' | 'keypress' | 'snapshot';
+export type ActionType = 'click' | 'double_click' | 'right_click' | 'navigation' | 'keypress' | 'snapshot';
 
 export type CategoryType = 'SOP' | 'Tutorial' | 'Troubleshooting' | 'Onboarding' | 'General';
 
 export interface Project {
   id: string;
   title: string;
+  version: string;
   description: string;
   category: CategoryType;
   tags: string[];

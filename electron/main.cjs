@@ -178,11 +178,27 @@ function stopRecordingSession() {
   }
 }
 
+function extractCleanAppTitle(rawTitle, procName) {
+  if (procName && procName.toLowerCase() !== 'winexe' && procName.toLowerCase() !== 'capture') {
+    return procName;
+  }
+  if (!rawTitle) return 'Application';
+  if (rawTitle.includes(' - Google Chrome')) return 'Google Chrome';
+  if (rawTitle.includes(' - Visual Studio Code')) return 'VS Code';
+  if (rawTitle.includes(' - Microsoft Edge')) return 'Microsoft Edge';
+  const parts = rawTitle.split(/ - | \| /);
+  if (parts.length > 1) {
+    return parts[parts.length - 1].trim();
+  }
+  return rawTitle.slice(0, 35).trim();
+}
+
 let currentCaptureConfig = { scope: 'window', hotspotVariant: 'spotlight' };
-
 let startingStepOffset = 0;
+let lastClickState = { x: 0, y: 0, time: 0, windowTitle: '' };
+let lastForegroundTitle = '';
 
-async function captureStep(clickX, clickY, isSingleShot = false, overrideProjectId = null, overrideStepNumber = null) {
+async function captureStep(clickX, clickY, isSingleShot = false, overrideProjectId = null, overrideStepNumber = null, explicitAction = null) {
   if (isBusyCapturing) return null;
   if (!isSingleShot && (isRecordingPaused || !isRecording)) return null;
 
@@ -226,29 +242,57 @@ async function captureStep(clickX, clickY, isSingleShot = false, overrideProject
       const imageUri = 'file:///' + shotFile.replace(/\\/g, '/');
       const relX = Math.max(0, clickX - (capResult.left || 0));
       const relY = Math.max(0, clickY - (capResult.top || 0));
-      const appTitle = capResult.windowTitle || 'Application';
+      const rawApp = capResult.windowTitle || 'Application';
+      const cleanApp = extractCleanAppTitle(rawApp, capResult.processName);
+      const elemName = (capResult.elementTitle || '').trim();
+      const ctrlType = (capResult.controlType || '').trim();
 
       const stepNumber = overrideStepNumber || (startingStepOffset + recordedSteps.length + 1);
       const isSpotlight = (currentCaptureConfig.hotspotVariant || 'spotlight') === 'spotlight';
+
+      let stepAction = explicitAction || (isSingleShot ? 'snapshot' : 'click');
+      let stepTitle = '';
+      let stepInstructions = '';
+
+      if (stepAction === 'navigation') {
+        stepTitle = `Switch to ${cleanApp}`;
+        stepInstructions = `<p>Open and switch to the <strong>${cleanApp}</strong> window.</p>`;
+      } else if (stepAction === 'keypress') {
+        stepTitle = `Submit / Navigate in ${cleanApp}`;
+        stepInstructions = `<p>Press <strong>Enter</strong> to submit or navigate in <em>${cleanApp}</em>.</p>`;
+      } else if (stepAction === 'snapshot') {
+        stepTitle = elemName ? `View ${elemName} in ${cleanApp}` : `Snapshot in ${cleanApp}`;
+        stepInstructions = `<p>Review <strong>${elemName || cleanApp}</strong> on screen.</p>`;
+      } else {
+        // click
+        if (elemName) {
+          const ctrlLabel = ctrlType && ctrlType.toLowerCase() !== 'element' && ctrlType.toLowerCase() !== 'custom'
+            ? ctrlType.toLowerCase()
+            : 'item';
+          stepTitle = `Click "${elemName}"`;
+          stepInstructions = `<p>Click on the <strong>${elemName}</strong> ${ctrlLabel} in <em>${cleanApp}</em> to proceed.</p>`;
+        } else {
+          stepTitle = `Click in ${cleanApp}`;
+          stepInstructions = `<p>Click on the target element in <strong>${cleanApp}</strong> to proceed.</p>`;
+        }
+      }
 
       const step = {
         id: `step_${now}`,
         projectId: overrideProjectId || currentProjectId,
         stepNumber: stepNumber,
-        title: isSingleShot ? `Snapshot in ${appTitle}` : `Click in ${appTitle}`,
-        richInstructions: isSingleShot
-          ? `<p>Screen snapshot captured for <strong>${appTitle}</strong>.</p>`
-          : `<p>Click on the target element in <strong>${appTitle}</strong> to proceed.</p>`,
-        actionType: isSingleShot ? 'snapshot' : 'click',
+        title: stepTitle,
+        richInstructions: stepInstructions,
+        actionType: stepAction,
         screenshotPath: imageUri,
         originalWidth: capResult.width || 1920,
         originalHeight: capResult.height || 1080,
         clickX: relX,
         clickY: relY,
-        uiaName: appTitle,
-        uiaControlType: isSingleShot ? 'Window' : 'Element',
-        uiaAppName: appTitle,
-        annotations: isSingleShot
+        uiaName: elemName || cleanApp,
+        uiaControlType: ctrlType || (isSingleShot ? 'Window' : 'Element'),
+        uiaAppName: cleanApp,
+        annotations: (stepAction === 'snapshot' || stepAction === 'navigation')
           ? []
           : [
               {
@@ -328,7 +372,56 @@ function startGlobalHook() {
                 continue;
               }
             }
+
+            const now = Date.now();
+            const dist = Math.hypot(evt.x - lastClickState.x, evt.y - lastClickState.y);
+            const timeDiff = now - lastClickState.time;
+
+            // Merge quick consecutive click (<500ms, <15px) into double-click
+            if (dist < 15 && timeDiff < 500 && recordedSteps.length > 0) {
+              const lastStep = recordedSteps[recordedSteps.length - 1];
+              if (lastStep.actionType === 'click') {
+                lastStep.actionType = 'double_click';
+                lastStep.title = lastStep.title.replace(/^Click\b/i, 'Double-click');
+                lastStep.richInstructions = lastStep.richInstructions.replace(/Click on/i, 'Double-click on');
+                lastClickState = { x: evt.x, y: evt.y, time: now, windowTitle: lastClickState.windowTitle };
+                if (pillWindow && !pillWindow.isDestroyed()) {
+                  pillWindow.webContents.send('pill-step-count', startingStepOffset + recordedSteps.length);
+                }
+                continue;
+              }
+            }
+
+            // Suppress duplicate click (<1500ms, <15px)
+            if (dist < 15 && timeDiff < 1500) {
+              continue;
+            }
+
+            lastClickState = { x: evt.x, y: evt.y, time: now, windowTitle: '' };
             captureStep(evt.x, evt.y);
+          } else if (evt.type === 'keypress' && evt.key === 'Enter') {
+            const now = Date.now();
+            if (now - lastCaptureTime > 600) {
+              captureStep(evt.x || 0, evt.y || 0, false, null, null, 'keypress');
+            }
+          } else if (evt.type === 'window_focus' && evt.windowTitle) {
+            const title = evt.windowTitle.trim();
+            // Ignore SCRCD own windows, task switcher, or immediate repeat
+            if (
+              title &&
+              title !== lastForegroundTitle &&
+              !title.startsWith('SCRCD') &&
+              title !== 'Task Switching' &&
+              title !== 'Snipping Tool Overlay' &&
+              title !== 'New notification'
+            ) {
+              lastForegroundTitle = title;
+              const now = Date.now();
+              if (now - lastCaptureTime > 800) {
+                const mouse = screen.getCursorScreenPoint();
+                captureStep(mouse.x, mouse.y, false, null, null, 'navigation');
+              }
+            }
           }
         } catch (e) {
           // Ignore JSON parse errors
@@ -493,6 +586,9 @@ ipcMain.handle('export-pdf', async (_event, { htmlContent, defaultFilename }) =>
             .then(() => setTimeout(resolve, 350));
         });
       `);
+
+      // Emulate print media type for exact @media print CSS application
+      await printWin.webContents.emulateMediaType('print');
 
       pdfBuffer = await printWin.webContents.printToPDF({
         printBackground: true,

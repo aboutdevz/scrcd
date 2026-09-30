@@ -10,10 +10,28 @@ export async function generatePptx(
   pptx.layout = 'LAYOUT_WIDE'; // 13.33 x 7.5 inches widescreen
 
   const accent = branding.accentColor ? branding.accentColor.replace('#', '') : '2563EB';
+  const logoUrl = project.logoUrl || branding.logoUrl;
+  const version = project.version || '1.0.0';
 
   // 1. Title Slide
   const titleSlide = pptx.addSlide();
   titleSlide.background = { color: '0F172A' }; // Dark slate
+
+  // Custom Logo on Title Slide if available
+  if (logoUrl) {
+    try {
+      titleSlide.addImage({
+        data: logoUrl,
+        x: 1.4,
+        y: 0.8,
+        w: 2.2,
+        h: 0.8,
+        sizing: { type: 'contain', w: 2.2, h: 0.8 },
+      });
+    } catch (e) {
+      console.warn('Failed to embed logo in PPTX title slide:', e);
+    }
+  }
 
   // Left accent bar
   titleSlide.addShape(pptx.ShapeType.roundRect, {
@@ -34,7 +52,7 @@ export async function generatePptx(
     fontSize: 34,
     bold: true,
     color: 'FFFFFF',
-    fontFace: 'Segoe UI',
+    fontFace: 'Arial',
     valign: 'middle',
   });
 
@@ -46,13 +64,13 @@ export async function generatePptx(
       h: 1.2,
       fontSize: 16,
       color: '94A3B8',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
     });
   }
 
   // Footer Metadata
   titleSlide.addText(
-    `${project.companyName || branding.companyName}   |   ${project.author || branding.author}   |   ${new Date(project.updatedAt).toLocaleDateString()}`,
+    `Version: ${version}   |   ${project.companyName || branding.companyName}   |   ${project.author || branding.author}   |   ${new Date(project.updatedAt).toLocaleDateString()}`,
     {
       x: 1.4,
       y: 5.6,
@@ -60,11 +78,87 @@ export async function generatePptx(
       h: 0.5,
       fontSize: 13,
       color: '64748B',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
     }
   );
 
-  // 2. Step Slides (Modern 16:9 Split layout)
+  // 2. Agenda / Table of Contents Slide (if multiple steps)
+  if (steps.length > 2) {
+    const agendaSlide = pptx.addSlide();
+    agendaSlide.background = { color: 'F8FAFC' };
+
+    agendaSlide.addShape(pptx.ShapeType.rect, {
+      x: 0,
+      y: 0,
+      w: 13.33,
+      h: 0.9,
+      fill: { color: '0F172A' },
+      line: { color: '0F172A', width: 0 },
+    });
+
+    agendaSlide.addText('TABLE OF CONTENTS', {
+      x: 0.8,
+      y: 0.15,
+      w: 8.0,
+      h: 0.6,
+      fontSize: 18,
+      bold: true,
+      color: 'FFFFFF',
+      fontFace: 'Arial',
+      valign: 'middle',
+    });
+
+    // Group steps
+    interface ChapterGroup {
+      title: string;
+      steps: Step[];
+    }
+    const chapters: ChapterGroup[] = [];
+    let curChapter: ChapterGroup = { title: '', steps: [] };
+
+    for (const step of steps) {
+      if (step.sectionTitle && step.sectionTitle !== curChapter.title) {
+        if (curChapter.steps.length > 0) chapters.push(curChapter);
+        curChapter = { title: step.sectionTitle, steps: [step] };
+      } else {
+        curChapter.steps.push(step);
+      }
+    }
+    if (curChapter.steps.length > 0) chapters.push(curChapter);
+
+    let currentY = 1.3;
+    for (const ch of chapters.slice(0, 5)) {
+      if (ch.title) {
+        agendaSlide.addText(ch.title.toUpperCase(), {
+          x: 0.8,
+          y: currentY,
+          w: 11.5,
+          h: 0.35,
+          fontSize: 13,
+          bold: true,
+          color: accent,
+          fontFace: 'Arial',
+        });
+        currentY += 0.4;
+      }
+
+      for (const s of ch.steps.slice(0, 4)) {
+        agendaSlide.addText(`Step ${s.stepNumber}: ${s.title}`, {
+          x: 1.2,
+          y: currentY,
+          w: 11.0,
+          h: 0.3,
+          fontSize: 12,
+          color: '334155',
+          fontFace: 'Arial',
+        });
+        currentY += 0.32;
+      }
+      currentY += 0.15;
+    }
+  }
+
+  // 3. Step Slides (Modern 16:9 Split layout)
   for (const step of steps) {
     const slide = pptx.addSlide();
     slide.background = { color: 'F1F5F9' }; // Clean neutral background
@@ -96,7 +190,7 @@ export async function generatePptx(
       fontSize: 11,
       bold: true,
       color: 'FFFFFF',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
       align: 'center',
       valign: 'middle',
     });
@@ -110,7 +204,7 @@ export async function generatePptx(
       fontSize: 16,
       bold: true,
       color: 'FFFFFF',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
       valign: 'middle',
     });
 
@@ -122,7 +216,7 @@ export async function generatePptx(
       h: 0.55,
       fontSize: 12,
       color: '94A3B8',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
       align: 'right',
       valign: 'middle',
     });
@@ -146,7 +240,7 @@ export async function generatePptx(
       fontSize: 11,
       bold: true,
       color: '64748B',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
     });
     slide.addText(`${step.uiaAppName || 'Application'}`, {
       x: 1.95,
@@ -156,7 +250,7 @@ export async function generatePptx(
       fontSize: 11,
       bold: true,
       color: '0F172A',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
     });
 
     slide.addText(`Action:`, {
@@ -167,13 +261,13 @@ export async function generatePptx(
       fontSize: 11,
       bold: true,
       color: '64748B',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
     });
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: 1.95,
       y: 1.8,
-      w: 1.2,
+      w: 1.4,
       h: 0.32,
       fill: { color: 'E2E8F0' },
       line: { color: 'CBD5E1', width: 0.5 },
@@ -181,12 +275,12 @@ export async function generatePptx(
     slide.addText(`${step.actionType.toUpperCase()}`, {
       x: 1.95,
       y: 1.8,
-      w: 1.2,
+      w: 1.4,
       h: 0.32,
       fontSize: 10,
       bold: true,
       color: '334155',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
       align: 'center',
       valign: 'middle',
     });
@@ -213,13 +307,12 @@ export async function generatePptx(
       h: 4.3,
       fontSize: 13,
       color: '334155',
-      fontFace: 'Segoe UI',
+      fontFace: 'Arial',
       valign: 'top',
     });
 
     // Right Column: High-Resolution Screenshot Container
     if (step.screenshotPath) {
-      // Dark border frame for screenshot
       slide.addShape(pptx.ShapeType.roundRect, {
         x: 4.65,
         y: 1.15,

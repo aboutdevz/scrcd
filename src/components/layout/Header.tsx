@@ -157,17 +157,25 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExport, onOpenSimulator, o
               />
             </form>
           ) : (
-            <button
-              type="button"
-              onClick={() => setIsEditingTitle(true)}
-              className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md hover:bg-secondary/70 transition-colors max-w-full truncate"
-              title="Click to rename guide"
-            >
-              <span className="text-xs font-medium truncate text-foreground">
-                {activeProject.title}
+            <div className="flex items-center gap-1.5 max-w-full">
+              <button
+                type="button"
+                onClick={() => setIsEditingTitle(true)}
+                className="group inline-flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-secondary/70 transition-colors max-w-full truncate"
+                title="Click to rename guide"
+              >
+                <span className="text-xs font-medium truncate text-foreground">
+                  {activeProject.title}
+                </span>
+                <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+              </button>
+              <span
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary/80 text-muted-foreground border border-border shrink-0"
+                title={`Guide Version: ${activeProject.version || '1.0.0'}`}
+              >
+                v{activeProject.version || '1.0.0'}
               </span>
-              <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-            </button>
+            </div>
           )
         ) : (
           <span className="text-xs text-muted-foreground">No guide selected</span>

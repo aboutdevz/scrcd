@@ -41,3 +41,23 @@
 - **Privacy & Storage**: API keys are Bring-Your-Own-Key (BYOK) and must be stored client-side in `localStorage`.
 - **Provider Support**: Maintain agnostic provider support (`openai`, `gemini`, `anthropic`, `custom`).
 - **User Review Guardrail**: Never mutate user steps silently. AI generations must present a diff/review modal allowing users to inspect proposed changes before applying.
+
+## 8. UI Visual Guidelines & Aesthetics
+- **Zero Emojis**: Do not use emojis anywhere in the app UI, toolbars, buttons, dialogs, or exported documents. Use Lucide icons or clear text labels.
+- **No Extraneous Badges or Placeholder Icons**: Avoid decorative badges, custom app logo placeholders, or artificial marketing stickers. Keep the interface clean, technical, and purposeful.
+- **Full Light Mode Support**: All UI components and export templates must support a clean, accessible light mode alongside dark mode.
+
+## 9. Document & Export Styling Standards
+- **Borderless Document Styling**: In exported HTML, PDF, DOCX, and PPTX documents, do NOT wrap steps in card border boxes. Content should flow cleanly down the page separated by natural whitespace or subtle divider lines.
+- **Mandatory Annotation Baking**: Screenshots passed to exporters (HTML, PDF, DOCX, PPTX, Markdown, GIF) must ALWAYS have annotations (click hotspots, spotlight halos, pointer icons, badges, arrows, blurs) burned directly into the image via `bakeStepsForExport` before document generation. Raw screenshots must never be exported without annotations.
+
+## 10. Privacy & Redaction Standards
+- **Guaranteed Privacy**: Blur and redaction elements must render 100% illegible.
+- **Mosaic Pixelation**: Blur tools must use heavy mosaic pixelation (downscale/upscale with smoothing disabled) plus frosted tint. Never use semi-transparent translucent overlays that allow high-contrast text underneath to be read.
+
+## 11. Capture & Canvas Architecture
+- **Multi-Monitor Scope**: Always detect multi-monitor environments and allow the user to select capture scope (Active Window, Smart Focus Near Cursor, Specific Monitor, or All Monitors).
+- **Smart Focus Cropping**: When capturing area near cursor, crop to a 1200×750 viewport centered at the cursor rather than capturing the full ultra-wide multi-screen desktop.
+- **Full Canvas Manipulation**: Maintain complete interactive canvas controls: select, move, resize (Transformer), delete (Backspace/Delete), and undo/redo (Ctrl+Z / Ctrl+Y).
+- **100% Offline Privacy**: Zero external telemetry, tracking, or network calls.
+
