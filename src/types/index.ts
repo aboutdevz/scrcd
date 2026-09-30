@@ -2,8 +2,18 @@ export type ActionType = 'click' | 'double_click' | 'right_click' | 'navigation'
 
 export type CategoryType = 'SOP' | 'Tutorial' | 'Troubleshooting' | 'Onboarding' | 'General';
 
+export interface Folder {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string; // Hex color code (e.g. #2563eb)
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Project {
   id: string;
+  folderId?: string | null;
   title: string;
   version: string;
   description: string;

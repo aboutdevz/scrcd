@@ -22,5 +22,8 @@ export function parseProjectFromJson(jsonStr: string): GuideProjectPackage {
   if (!parsed.project || !Array.isArray(parsed.steps)) {
     throw new Error('Invalid project JSON structure');
   }
+  if (!Array.isArray(parsed.project.tags)) {
+    parsed.project.tags = parsed.project.category ? [parsed.project.category] : ['SOP'];
+  }
   return parsed as GuideProjectPackage;
 }

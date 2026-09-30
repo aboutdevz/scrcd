@@ -1,4 +1,4 @@
-import { Project, Step, Section, BrandingProfile } from '@/types';
+import { Project, Step, Section, BrandingProfile, Folder } from '@/types';
 import { generateMockScreenshot } from './mockData';
 
 // Check if running inside desktop Tauri runtime
@@ -38,6 +38,70 @@ const stepListeners: StepCallback[] = [];
 
 // Dev-Bridge API Client
 export const api = {
+  async listFolders(): Promise<Folder[]> {
+    const raw = localStorage.getItem('scrcd_folders');
+    if (!raw) {
+      localStorage.setItem('scrcd_folders', JSON.stringify([]));
+      return [];
+    }
+    try {
+      const parsed: Folder[] = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getFolder(id: string): Promise<Folder | null> {
+    const list = await this.listFolders();
+    return list.find((f) => f.id === id) || null;
+  },
+
+  async saveFolder(folder: Folder): Promise<void> {
+    const list = await this.listFolders();
+    const idx = list.findIndex((f) => f.id === folder.id);
+    if (idx >= 0) {
+      list[idx] = { ...folder, updatedAt: Date.now() };
+    } else {
+      list.unshift({ ...folder, createdAt: Date.now(), updatedAt: Date.now() });
+    }
+    localStorage.setItem('scrcd_folders', JSON.stringify(list));
+  },
+
+  async deleteFolder(id: string, options?: { deleteGuides?: boolean }): Promise<void> {
+    const list = await this.listFolders();
+    const filtered = list.filter((f) => f.id !== id);
+    localStorage.setItem('scrcd_folders', JSON.stringify(filtered));
+
+    // Handle projects inside this folder
+    const projects = await this.listProjects();
+    if (options?.deleteGuides) {
+      for (const p of projects) {
+        if (p.folderId === id) {
+          await this.deleteProject(p.id);
+        }
+      }
+    } else {
+      // Safe preservation: Move guides to unorganized (folderId: null)
+      let modified = false;
+      const updatedProjects = projects.map((p) => {
+        if (p.folderId === id) {
+          modified = true;
+          return { ...p, folderId: null, updatedAt: Date.now() };
+        }
+        return p;
+      });
+      if (modified) {
+        localStorage.setItem('scrcd_projects', JSON.stringify(updatedProjects));
+      }
+    }
+  },
+
+  async listFolderProjects(folderId: string): Promise<Project[]> {
+    const projects = await this.listProjects();
+    return projects.filter((p) => p.folderId === folderId);
+  },
+
   async listProjects(): Promise<Project[]> {
     if (isTauri()) {
       try {
@@ -54,10 +118,15 @@ export const api = {
     }
     try {
       let parsed: Project[] = JSON.parse(raw);
-      // Clean up legacy demo projects and ensure version exists
+      // Clean up legacy demo projects and ensure version, folderId, tags exist
       const filtered = parsed
         .filter((p) => !p.id.startsWith('proj_demo_'))
-        .map((p) => ({ ...p, version: p.version || '1.0.0' }));
+        .map((p) => ({
+          ...p,
+          version: p.version || '1.0.0',
+          folderId: p.folderId || null,
+          tags: Array.isArray(p.tags) ? p.tags : (p.category ? [p.category] : []),
+        }));
       if (filtered.length !== parsed.length) {
         localStorage.setItem('scrcd_projects', JSON.stringify(filtered));
       }

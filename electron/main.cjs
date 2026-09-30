@@ -72,6 +72,7 @@ function createMainWindow() {
     minHeight: 700,
     title: 'SCRCD - Step-by-Step SOP & Guide Creator',
     icon: appIcon,
+    backgroundColor: '#090d16',
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: true,
@@ -99,6 +100,10 @@ function createMainWindow() {
 
   mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
     console.error(`Page failed to load [${code}]: ${desc}`);
+  });
+
+  mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    console.log(`[Renderer Console] ${message} (${sourceId}:${line})`);
   });
 
   mainWindow.on('closed', () => {
@@ -544,7 +549,7 @@ ipcMain.handle('cancel-recording', async () => {
 
 ipcMain.handle('export-pdf', async (_event, { htmlContent, defaultFilename }) => {
   try {
-    const rawName = defaultFilename || 'guide';
+    const rawName = (defaultFilename || 'guide').replace(/\.pdf$/i, '');
     const sanitized = rawName.replace(/[^a-zA-Z0-9_-]/g, '_') + '.pdf';
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow || undefined, {
       title: 'Save SOP Guide as PDF',
@@ -577,13 +582,30 @@ ipcMain.handle('export-pdf', async (_event, { htmlContent, defaultFilename }) =>
     try {
       await printWin.loadFile(tempHtmlPath);
 
-      // Give DOM and all images time to decode and settle
+      // Give DOM and all images time to decode and settle, with a 2.5s hard timeout
       await printWin.webContents.executeJavaScript(`
         new Promise((resolve) => {
+          const timer = setTimeout(resolve, 2500);
           const images = Array.from(document.images);
-          if (images.length === 0) return resolve();
-          Promise.all(images.map(img => img.complete ? Promise.resolve() : new Promise(r => { img.onload = r; img.onerror = r; })))
-            .then(() => setTimeout(resolve, 350));
+          if (images.length === 0) {
+            clearTimeout(timer);
+            return resolve();
+          }
+          Promise.all(
+            images.map((img) => {
+              if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+              return new Promise((r) => {
+                img.onload = r;
+                img.onerror = r;
+              });
+            })
+          ).then(() => {
+            clearTimeout(timer);
+            setTimeout(resolve, 200);
+          }).catch(() => {
+            clearTimeout(timer);
+            resolve();
+          });
         });
       `);
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Project, Step, AnnotationShape, AnnotationTool, BrandingProfile, Section } from '@/types';
+import { Project, Step, AnnotationShape, AnnotationTool, BrandingProfile, Section, Folder } from '@/types';
 import { api } from '@/services/api';
 
 interface AppState {
@@ -7,14 +7,50 @@ interface AppState {
   currentView: 'dashboard' | 'editor' | 'settings';
   setCurrentView: (view: 'dashboard' | 'editor' | 'settings') => void;
 
+  // Folders
+  folders: Folder[];
+  activeFolderId: string | null; // null = all, '__unorganized__' = unorganized, or folder id
+  loadFolders: () => Promise<void>;
+  createFolder: (name: string, description?: string, color?: string) => Promise<Folder>;
+  updateFolder: (folder: Folder) => Promise<void>;
+  deleteFolder: (id: string, deleteGuides?: boolean) => Promise<void>;
+  setActiveFolderId: (id: string | null) => void;
+  moveProjectToFolder: (projectId: string, folderId: string | null) => Promise<void>;
+
   // Projects
   projects: Project[];
   activeProject: Project | null;
   loadProjects: () => Promise<void>;
-  createProject: (title: string, category?: string, description?: string, version?: string) => Promise<Project>;
+  createProject: (
+    title: string,
+    category?: string,
+    description?: string,
+    version?: string,
+    folderId?: string | null,
+    tags?: string[]
+  ) => Promise<Project>;
   updateProject: (project: Project) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   selectProject: (id: string) => Promise<void>;
+
+  // Custom Tags
+  selectedTag: string | null;
+  setSelectedTag: (tag: string | null) => void;
+  getAllTags: () => string[];
+
+  // Command Palette & Global Search
+  isCommandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
+
+  // Onboarding & Modals
+  hasCompletedOnboarding: boolean;
+  setHasCompletedOnboarding: (val: boolean) => void;
+  isAboutOpen: boolean;
+  setIsAboutOpen: (val: boolean) => void;
+  isMasterBinderOpen: boolean;
+  setIsMasterBinderOpen: (val: boolean) => void;
+  masterBinderFolderId: string | null;
+  setMasterBinderFolderId: (id: string | null) => void;
 
   // Steps
   steps: Step[];
@@ -77,6 +113,60 @@ export const useStore = create<AppState>((set, get) => ({
   currentView: 'dashboard',
   setCurrentView: (view) => set({ currentView: view }),
 
+  // Folders
+  folders: [],
+  activeFolderId: null,
+
+  loadFolders: async () => {
+    const folders = await api.listFolders();
+    set({ folders });
+  },
+
+  createFolder: async (name, description = '', color = '#2563eb') => {
+    const id = `folder_${Date.now()}`;
+    const newFolder: Folder = {
+      id,
+      name: name.trim(),
+      description: description.trim(),
+      color,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await api.saveFolder(newFolder);
+    await get().loadFolders();
+    return newFolder;
+  },
+
+  updateFolder: async (folder) => {
+    await api.saveFolder(folder);
+    set((state) => ({
+      folders: state.folders.map((f) => (f.id === folder.id ? folder : f)),
+    }));
+  },
+
+  deleteFolder: async (id, deleteGuides = false) => {
+    await api.deleteFolder(id, { deleteGuides });
+    const folders = get().folders.filter((f) => f.id !== id);
+    const activeFolderId = get().activeFolderId === id ? null : get().activeFolderId;
+    set({ folders, activeFolderId });
+    await get().loadProjects();
+  },
+
+  setActiveFolderId: (id) => set({ activeFolderId: id }),
+
+  moveProjectToFolder: async (projectId, folderId) => {
+    const project = await api.getProject(projectId);
+    if (project) {
+      const updated: Project = { ...project, folderId: folderId || null, updatedAt: Date.now() };
+      await api.saveProject(updated);
+      set((state) => ({
+        projects: state.projects.map((p) => (p.id === projectId ? updated : p)),
+        activeProject: state.activeProject?.id === projectId ? updated : state.activeProject,
+      }));
+    }
+  },
+
+  // Projects
   projects: [],
   activeProject: null,
 
@@ -85,16 +175,26 @@ export const useStore = create<AppState>((set, get) => ({
     set({ projects });
   },
 
-  createProject: async (title, category = 'SOP', description = '', version = '1.0.0') => {
+  createProject: async (title, category = 'SOP', description = '', version = '1.0.0', folderId, tags) => {
     const id = `proj_${Date.now()}`;
     const branding = get().branding;
+    const currentActiveFolder = get().activeFolderId;
+    const assignedFolderId =
+      folderId !== undefined
+        ? folderId
+        : currentActiveFolder && currentActiveFolder !== '__unorganized__'
+        ? currentActiveFolder
+        : null;
+    const assignedTags = tags && tags.length > 0 ? tags : (category ? [category] : ['SOP']);
+
     const newProj: Project = {
       id,
+      folderId: assignedFolderId,
       title: title || 'Untitled Guide',
       version: version || '1.0.0',
       description,
       category: category as any,
-      tags: [category],
+      tags: assignedTags,
       author: branding.author,
       companyName: branding.companyName,
       accentColor: branding.accentColor,
@@ -423,4 +523,41 @@ export const useStore = create<AppState>((set, get) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   selectedCategory: 'All',
   setSelectedCategory: (cat) => set({ selectedCategory: cat }),
+
+  // Custom Tags
+  selectedTag: null,
+  setSelectedTag: (tag) => set({ selectedTag: tag }),
+  getAllTags: () => {
+    const all = new Set<string>();
+    get().projects.forEach((p) => {
+      if (Array.isArray(p.tags)) {
+        p.tags.forEach((t) => {
+          if (t && t.trim()) all.add(t.trim());
+        });
+      }
+    });
+    return Array.from(all);
+  },
+
+  // Command Palette
+  isCommandPaletteOpen: false,
+  setCommandPaletteOpen: (open) => set({ isCommandPaletteOpen: open }),
+
+  // Onboarding & Modals
+  hasCompletedOnboarding: (() => {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem('scrcd_onboarded') === 'true';
+  })(),
+  setHasCompletedOnboarding: (val) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('scrcd_onboarded', val ? 'true' : 'false');
+    }
+    set({ hasCompletedOnboarding: val });
+  },
+  isAboutOpen: false,
+  setIsAboutOpen: (val) => set({ isAboutOpen: val }),
+  isMasterBinderOpen: false,
+  setIsMasterBinderOpen: (val) => set({ isMasterBinderOpen: val }),
+  masterBinderFolderId: null,
+  setMasterBinderFolderId: (id) => set({ masterBinderFolderId: id, isMasterBinderOpen: Boolean(id) }),
 }));

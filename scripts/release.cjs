@@ -48,7 +48,7 @@ if (status) {
 
 // 2. Run unit tests
 console.log('\nRunning unit tests...');
-run('node tests/exportTest.js');
+run('npm run test');
 
 // 3. Run build verification
 console.log('\nVerifying production build...');
@@ -68,7 +68,20 @@ if (fs.existsSync(lockPath)) {
   fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
 }
 
-// 5. Update tauri.conf.json & Cargo.toml if they exist
+// 5. Update src/config/version.ts & index.html if they exist
+const versionTsPath = path.join(rootDir, 'src', 'config', 'version.ts');
+if (fs.existsSync(versionTsPath)) {
+  fs.writeFileSync(versionTsPath, `export const APP_VERSION = '${nextVersion}';\n`);
+}
+
+const indexPath = path.join(rootDir, 'index.html');
+if (fs.existsSync(indexPath)) {
+  let indexHtml = fs.readFileSync(indexPath, 'utf8');
+  indexHtml = indexHtml.replace(/v\d+\.\d+\.\d+\s*•\s*Loading\.\.\./, `v${nextVersion} • Loading...`);
+  fs.writeFileSync(indexPath, indexHtml);
+}
+
+// 6. Update tauri.conf.json & Cargo.toml if they exist
 const tauriConfPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
 if (fs.existsSync(tauriConfPath)) {
   const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, 'utf8'));
@@ -83,13 +96,13 @@ if (fs.existsSync(cargoTomlPath)) {
   fs.writeFileSync(cargoTomlPath, cargo);
 }
 
-// 6. Commit & tag
+// 7. Commit & tag
 console.log('\nCommitting version bump and creating git tag...');
-run(`git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml`);
+run(`git add package.json package-lock.json src/config/version.ts index.html src-tauri/tauri.conf.json src-tauri/Cargo.toml`);
 run(`git commit -m "chore(release): v${nextVersion}"`);
 run(`git tag -a v${nextVersion} -m "Release v${nextVersion}"`);
 
-console.log(`\n🎉 Successfully prepared release v${nextVersion}!`);
+console.log(`\nSuccessfully prepared release v${nextVersion}!`);
 console.log('Next steps:');
 console.log('  1. Push commits and tag to GitHub:');
 console.log(`     git push origin main --tags`);
