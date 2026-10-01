@@ -124,6 +124,17 @@ SCRCD includes an automated release workflow powered by GitHub Actions:
 
 ---
 
+---
+
+## Windows 11 Smart App Control & SmartScreen
+
+If Windows 11 Smart App Control blocks the downloaded executable:
+1. **Right-click** the file in File Explorer -> **Properties**.
+2. At the bottom of the **General** tab, check the **Unblock** box under **Security**.
+3. Click **Apply** and launch SCRCD.
+
+For PowerShell one-liners and complete details, see [docs/SMART_APP_CONTROL.md](docs/SMART_APP_CONTROL.md).
+
 ## 📄 License
 
 This project is licensed under the [MIT License](file:///c:/Users/PTRE/Documents/scrcd/LICENSE) - see the [LICENSE](file:///c:/Users/PTRE/Documents/scrcd/LICENSE) file for details.

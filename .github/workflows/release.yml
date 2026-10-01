@@ -46,7 +46,7 @@ jobs:
 
       - name: Package Windows executable & installer
         shell: powershell
-        run: npx electron-builder --win portable nsis
+        run: npx electron-builder --win portable nsis zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -54,7 +54,7 @@ jobs:
         shell: powershell
         run: |
           cd release
-          Get-FileHash -Algorithm SHA256 *.exe | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } | Out-File -Encoding ascii SHA256SUMS.txt
+          Get-FileHash -Algorithm SHA256 *.exe, *.zip | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } | Out-File -Encoding ascii SHA256SUMS.txt
           Write-Host "--- SHA256SUMS ---"
           Get-Content SHA256SUMS.txt
 
@@ -65,6 +65,7 @@ jobs:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           files: |
             release/*.exe
+            release/*.zip
             release/SHA256SUMS.txt
           generate_release_notes: true
           draft: false

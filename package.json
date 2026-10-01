@@ -79,7 +79,8 @@
     "win": {
       "target": [
         "portable",
-        "nsis"
+        "nsis",
+        "zip"
       ],
       "icon": "public/favicon.ico"
     },
