@@ -26,19 +26,23 @@ Write-Host "Compiling tools/CaptureScreen.cs -> bin/capture.exe..."
 Write-Host "Compiling tools/MouseHook.cs -> bin/hook.exe..."
 & $csc /nologo /optimize /target:winexe /win32manifest:"$manifest" /win32icon:"$icon" /out:"$binDir\hook.exe" "$assemblyInfo" "$PSScriptRoot\MouseHook.cs"
 
-# Apply Authenticode signature to protect against AV/SmartScreen false positives
+# Authenticode signing:
+# Only sign if an official, trusted code-signing certificate exists in the certificate store.
+# Do NOT generate untrusted self-signed certificates, as they produce 'UnknownError'
+# and trigger antivirus/SmartScreen false positives. Genuine signing is handled via SignPath in CI.
 try {
-    $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue | Where-Object { $_.Subject -like "*SCRCD*" } | Select-Object -First 1
-    if (-not $cert) {
-        $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=SCRCD Software" -CertStoreLocation Cert:\CurrentUser\My -ErrorAction SilentlyContinue
-    }
+    $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue | Where-Object {
+        $_.Subject -like "*SCRCD*" -and $_.Verify()
+    } | Select-Object -First 1
     if ($cert) {
-        Write-Host "Applying Authenticode signature to native binaries..."
+        Write-Host "Applying valid Authenticode signature to native binaries..."
         Set-AuthenticodeSignature -FilePath "$binDir\capture.exe" -Certificate $cert | Out-Null
         Set-AuthenticodeSignature -FilePath "$binDir\hook.exe" -Certificate $cert | Out-Null
+    } else {
+        Write-Host "Binaries left cleanly unsigned for CI signing (SignPath / Trusted Signing)."
     }
 } catch {
-    Write-Warning "Authenticode signing skipped (not critical): $($_.Exception.Message)"
+    Write-Warning "Authenticode signing check skipped: $($_.Exception.Message)"
 }
 
 Write-Host "Native tools successfully built into bin/!"

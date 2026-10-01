@@ -9,7 +9,6 @@ public class Program
 {
     private const int WH_MOUSE_LL = 14;
     private const int WM_LBUTTONDOWN = 0x0201;
-    private const int VK_RETURN = 0x0D;
 
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     private const uint WINEVENT_OUTOFCONTEXT = 0;
@@ -22,7 +21,6 @@ public class Program
 
     private static IntPtr _mouseHookID = IntPtr.Zero;
     private static IntPtr _winEventHookID = IntPtr.Zero;
-    private static volatile bool _running = true;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT { public int x; public int y; }
@@ -56,11 +54,6 @@ public class Program
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out POINT lpPoint);
-
-    [DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int vKey);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr GetModuleHandle(string lpModuleName);
@@ -140,10 +133,6 @@ public class Program
 
         _winEventHookID = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _winEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
 
-        Thread enterKeyThread = new Thread(MonitorEnterKey);
-        enterKeyThread.IsBackground = true;
-        enterKeyThread.Start();
-
         // Keep running until process is terminated
         MSG msg;
         while (GetMessage(out msg, IntPtr.Zero, 0, 0) > 0)
@@ -152,32 +141,8 @@ public class Program
             DispatchMessage(ref msg);
         }
 
-        _running = false;
         if (_mouseHookID != IntPtr.Zero) UnhookWindowsHookEx(_mouseHookID);
         if (_winEventHookID != IntPtr.Zero) UnhookWinEvent(_winEventHookID);
-    }
-
-    private static void MonitorEnterKey()
-    {
-        bool wasDown = false;
-        while (_running)
-        {
-            try
-            {
-                short state = GetAsyncKeyState(VK_RETURN);
-                bool isDown = (state & 0x8000) != 0;
-                if (isDown && !wasDown)
-                {
-                    POINT pt;
-                    GetCursorPos(out pt);
-                    Console.WriteLine(string.Format("{{\"type\":\"keypress\",\"key\":\"Enter\",\"x\":{0},\"y\":{1}}}", pt.x, pt.y));
-                    Console.Out.Flush();
-                }
-                wasDown = isDown;
-            }
-            catch {}
-            Thread.Sleep(35);
-        }
     }
 
     private static IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
