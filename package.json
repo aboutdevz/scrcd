@@ -78,9 +78,8 @@
     },
     "win": {
       "target": [
-        "portable",
         "nsis",
-        "zip"
+        "portable"
       ],
       "icon": "public/favicon.ico"
     },
@@ -89,7 +88,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "SCRCD"
+      "shortcutName": "SCRCD",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}.${ext}"
     }
   }
 }

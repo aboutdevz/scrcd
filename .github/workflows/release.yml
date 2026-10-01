@@ -46,15 +46,18 @@ jobs:
 
       - name: Package Windows executable & installer
         shell: powershell
-        run: npx electron-builder --win portable nsis zip
+        run: npx electron-builder --win nsis portable --publish never
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate SHA-256 Checksums
+      - name: Clean unnecessary files & generate SHA-256 Checksums
         shell: powershell
         run: |
+          Get-ChildItem -Path release -File | Where-Object { $_.Extension -notin @('.exe') } | Remove-Item -Force -ErrorAction SilentlyContinue
           cd release
-          Get-FileHash -Algorithm SHA256 *.exe, *.zip | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } | Out-File -Encoding ascii SHA256SUMS.txt
+          Get-FileHash -Algorithm SHA256 *.exe | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } | Out-File -Encoding ascii SHA256SUMS.txt
+          Write-Host "--- Clean Release Assets ---"
+          Get-ChildItem -Path . -File | Select-Object Name, Length
           Write-Host "--- SHA256SUMS ---"
           Get-Content SHA256SUMS.txt
 
@@ -65,7 +68,6 @@ jobs:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           files: |
             release/*.exe
-            release/*.zip
             release/SHA256SUMS.txt
           generate_release_notes: true
           draft: false

@@ -42,12 +42,9 @@ Unblock-File "$HOME\Downloads\*SCRCD*.exe"
 
 ---
 
-### Solution 3: Download the Portable `.zip` Release
+### Solution 3: Use the Windows Setup Installer (Recommended)
 
-Starting from v1.2.2+, SCRCD releases include a portable `.zip` bundle (`SCRCD-*-win.zip`):
-1. Download the `.zip` archive from the GitHub Releases page.
-2. Extract the folder using 7-Zip, WinRAR, or Windows Explorer.
-3. Executables extracted from archives do not trigger Smart App Control blocks.
+Download and run **`SCRCD-Setup-*.exe`**. The installer installs the application locally into your user profile (`%LOCALAPPDATA%\Programs\scrcd`). Because it is an installed program rather than a standalone Internet download, the desktop and Start Menu shortcuts execute cleanly without Mark of the Web hurdles!
 
 ---
 
