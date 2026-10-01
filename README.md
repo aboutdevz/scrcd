@@ -121,17 +121,15 @@ SCRCD includes an automated release workflow powered by GitHub Actions:
 - **Automated Builds**: Pushing a tag like `v1.0.0` or triggering the **Release** workflow from GitHub Actions automatically runs tests, packages the Windows portable executable and installer, computes SHA-256 checksums, and publishes the release on GitHub.
 - **Release Automation**: Run `npm run release <patch|minor|major>` to run tests, bump versions, commit, and create an annotated git tag.
 - For complete details, see [RELEASING.md](file:///c:/Users/PTRE/Documents/scrcd/RELEASING.md).
-
----
-
----
+---
 
 ## Windows 11 Smart App Control & SmartScreen
 
-If Windows 11 Smart App Control blocks the downloaded executable:
-1. **Right-click** the file in File Explorer -> **Properties**.
-2. At the bottom of the **General** tab, check the **Unblock** box under **Security**.
-3. Click **Apply** and launch SCRCD.
+- **Recommended**: Download and run the **Setup Installer (`SCRCD Setup *.exe`)**. Because it installs the application into your local programs directory, it runs cleanly without Mark of the Web hurdles.
+- If you download the standalone portable executable and Windows 11 Smart App Control flags it:
+  1. **Right-click** the file in File Explorer -> **Properties**.
+  2. At the bottom of the **General** tab, check the **Unblock** box under **Security**.
+  3. Click **Apply** and launch SCRCD.
 
 For PowerShell one-liners and complete details, see [docs/SMART_APP_CONTROL.md](docs/SMART_APP_CONTROL.md).
 
