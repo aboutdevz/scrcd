@@ -136,4 +136,33 @@ $icoStream.Dispose()
 [System.IO.File]::WriteAllBytes("public/favicon.ico", $icoBytes)
 [System.IO.File]::WriteAllBytes("electron/icon.ico", $icoBytes)
 
-Write-Host "Icons successfully created and placed in public/ and electron/!"
+# Build compact 32x32 & 16x16 ICO for native helper binaries (<20KB constraint)
+$compactSizes = @(32, 16)
+$compactPngList = $pngDataList | Where-Object { $compactSizes -contains $_.Size }
+$compactIcoStream = New-Object System.IO.MemoryStream
+$compactWriter = New-Object System.IO.BinaryWriter($compactIcoStream)
+$compactWriter.Write([uint16]0)
+$compactWriter.Write([uint16]1)
+$compactWriter.Write([uint16]$compactPngList.Count)
+$cOffset = 6 + ($compactPngList.Count * 16)
+foreach ($item in $compactPngList) {
+    $compactWriter.Write([byte]$item.Size)
+    $compactWriter.Write([byte]$item.Size)
+    $compactWriter.Write([byte]0)
+    $compactWriter.Write([byte]0)
+    $compactWriter.Write([uint16]1)
+    $compactWriter.Write([uint16]32)
+    $compactWriter.Write([uint32]$item.Bytes.Length)
+    $compactWriter.Write([uint32]$cOffset)
+    $cOffset += $item.Bytes.Length
+}
+foreach ($item in $compactPngList) {
+    $compactWriter.Write($item.Bytes)
+}
+$compactIcoBytes = $compactIcoStream.ToArray()
+$compactWriter.Dispose()
+$compactIcoStream.Dispose()
+[System.IO.File]::WriteAllBytes("tools/app.ico", $compactIcoBytes)
+
+Write-Host "Icons successfully created and placed in public/, electron/, and tools/!"
+

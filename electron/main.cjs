@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, dialog, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, dialog, nativeImage, desktopCapturer, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execFile } = require('child_process');
@@ -171,6 +171,7 @@ function createPillWindow() {
 function stopRecordingSession() {
   isRecording = false;
   isRecordingPaused = false;
+  unregisterRecordingShortcuts();
   if (hookProcess) {
     try {
       hookProcess.kill();
@@ -203,6 +204,89 @@ let startingStepOffset = 0;
 let lastClickState = { x: 0, y: 0, time: 0, windowTitle: '' };
 let lastForegroundTitle = '';
 
+async function captureWithDesktopCapturer(outputPath, clickX, clickY, config) {
+  try {
+    const displays = screen.getAllDisplays();
+    const primary = screen.getPrimaryDisplay();
+
+    let targetDisplay = displays.find((d) => {
+      const b = d.bounds;
+      return clickX >= b.x && clickX <= b.x + b.width && clickY >= b.y && clickY <= b.y + b.height;
+    }) || primary;
+
+    const scale = targetDisplay.scaleFactor || 1;
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: {
+        width: Math.round(targetDisplay.bounds.width * scale),
+        height: Math.round(targetDisplay.bounds.height * scale),
+      },
+    });
+
+    if (!sources || sources.length === 0) return null;
+
+    let source = sources.find((s) => s.display_id === targetDisplay.id.toString()) || sources[0];
+    let fullImage = source.thumbnail;
+    if (fullImage.isEmpty()) return null;
+
+    const imgSize = fullImage.getSize();
+    let cropX = 0;
+    let cropY = 0;
+    let cropW = imgSize.width;
+    let cropH = imgSize.height;
+
+    const mode = (config && config.scope) ? config.scope : 'window';
+
+    if (mode === 'cursor') {
+      const focusW = Math.min(Math.round(1200 * scale), cropW);
+      const focusH = Math.min(Math.round(750 * scale), cropH);
+      const relClickX = (clickX - targetDisplay.bounds.x) * scale;
+      const relClickY = (clickY - targetDisplay.bounds.y) * scale;
+
+      cropX = Math.max(0, Math.min(cropW - focusW, relClickX - Math.round(focusW / 2)));
+      cropY = Math.max(0, Math.min(cropH - focusH, relClickY - Math.round(focusH / 2)));
+      cropW = focusW;
+      cropH = focusH;
+    } else if (mode === 'monitor' && config && config.monitorBounds) {
+      const mb = config.monitorBounds;
+      cropX = Math.max(0, (mb.x - targetDisplay.bounds.x) * scale);
+      cropY = Math.max(0, (mb.y - targetDisplay.bounds.y) * scale);
+      cropW = Math.min(cropW - cropX, Math.round(mb.width * scale));
+      cropH = Math.min(cropH - cropY, Math.round(mb.height * scale));
+    }
+
+    const cropped = fullImage.crop({
+      x: Math.round(cropX),
+      y: Math.round(cropY),
+      width: Math.round(cropW),
+      height: Math.round(cropH),
+    });
+
+    const pngBuffer = cropped.toPNG();
+    const dir = path.dirname(outputPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    await fs.promises.writeFile(outputPath, pngBuffer);
+
+    return {
+      success: true,
+      width: Math.round(cropW / scale),
+      height: Math.round(cropH / scale),
+      left: Math.round((targetDisplay.bounds.x * scale + cropX) / scale),
+      top: Math.round((targetDisplay.bounds.y * scale + cropY) / scale),
+      windowTitle: 'Desktop',
+      elementTitle: '',
+      controlType: 'Screen',
+      processName: 'Desktop',
+      path: outputPath,
+    };
+  } catch (err) {
+    console.error('desktopCapturer native fallback error:', err);
+    return null;
+  }
+}
+
 async function captureStep(clickX, clickY, isSingleShot = false, overrideProjectId = null, overrideStepNumber = null, explicitAction = null) {
   if (isBusyCapturing) return null;
   if (!isSingleShot && (isRecordingPaused || !isRecording)) return null;
@@ -228,22 +312,58 @@ async function captureStep(clickX, clickY, isSingleShot = false, overrideProject
       captureArgs.push(b.x.toString(), b.y.toString(), b.width.toString(), b.height.toString());
     }
 
-    const capResult = await new Promise((resolve) => {
-      execFile(exePath, captureArgs, (err, stdout) => {
-        if (err) {
-          console.error('Capture exe error:', err);
-          return resolve({ success: false });
-        }
-        try {
-          const res = JSON.parse(stdout.trim());
-          resolve(res);
-        } catch (e) {
-          resolve({ success: true, windowTitle: 'Application', width: 1920, height: 1080, left: 0, top: 0 });
-        }
-      });
-    });
+    let capResult = null;
+    let captureSuccess = false;
 
-    if (fs.existsSync(shotFile)) {
+    if (fs.existsSync(exePath)) {
+      try {
+        capResult = await new Promise((resolve) => {
+          let resolved = false;
+          const safeResolve = (val) => {
+            if (!resolved) {
+              resolved = true;
+              resolve(val);
+            }
+          };
+
+          const child = execFile(exePath, captureArgs, { timeout: 4000 }, (err, stdout) => {
+            if (err) {
+              console.warn('capture.exe execution error or blocked by AV, engaging Electron native fallback:', err.message);
+              return safeResolve(null);
+            }
+            try {
+              const res = JSON.parse(stdout.trim());
+              safeResolve(res);
+            } catch (e) {
+              safeResolve({ success: true, windowTitle: 'Application', width: 1920, height: 1080, left: 0, top: 0 });
+            }
+          });
+
+          child.on('error', (err) => {
+            console.warn('capture.exe spawn error (likely blocked by AV):', err.message);
+            safeResolve(null);
+          });
+        });
+
+        if (capResult && fs.existsSync(shotFile)) {
+          captureSuccess = true;
+        }
+      } catch (err) {
+        console.warn('Exception running capture.exe:', err);
+      }
+    }
+
+    // Antivirus Resilience: Automatic fallback to pure Electron desktopCapturer if capture.exe failed or was blocked
+    if (!captureSuccess) {
+      console.log('Using pure Electron desktopCapturer fallback for screenshot...');
+      const fallbackResult = await captureWithDesktopCapturer(shotFile, clickX, clickY, currentCaptureConfig);
+      if (fallbackResult && fs.existsSync(shotFile)) {
+        capResult = fallbackResult;
+        captureSuccess = true;
+      }
+    }
+
+    if (captureSuccess && fs.existsSync(shotFile)) {
       const imageUri = 'file:///' + shotFile.replace(/\\/g, '/');
       const relX = Math.max(0, clickX - (capResult.left || 0));
       const relY = Math.max(0, clickY - (capResult.top || 0));
@@ -333,6 +453,39 @@ async function captureStep(clickX, clickY, isSingleShot = false, overrideProject
   return null;
 }
 
+function registerRecordingShortcuts() {
+  try {
+    globalShortcut.register('CommandOrControl+Shift+C', async () => {
+      if (!isRecording || isRecordingPaused) return;
+      const mouse = screen.getCursorScreenPoint();
+      await captureStep(mouse.x, mouse.y, false);
+    });
+    globalShortcut.register('F10', async () => {
+      if (!isRecording || isRecordingPaused) return;
+      const mouse = screen.getCursorScreenPoint();
+      await captureStep(mouse.x, mouse.y, false);
+    });
+  } catch (err) {
+    console.warn('Failed to register recording global shortcuts:', err);
+  }
+}
+
+function unregisterRecordingShortcuts() {
+  try {
+    globalShortcut.unregister('CommandOrControl+Shift+C');
+    globalShortcut.unregister('F10');
+  } catch (e) {}
+}
+
+function notifyHookStatus(active, message) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('hook-status', { active, message });
+  }
+  if (pillWindow && !pillWindow.isDestroyed()) {
+    pillWindow.webContents.send('hook-status', { active, message });
+  }
+}
+
 function startGlobalHook() {
   if (hookProcess) {
     try {
@@ -341,9 +494,13 @@ function startGlobalHook() {
     hookProcess = null;
   }
 
+  // Always enable global keyboard hotkeys (Ctrl+Shift+C / F10) during recording
+  registerRecordingShortcuts();
+
   const hookExe = getBinaryPath('hook.exe');
   if (!fs.existsSync(hookExe)) {
-    console.error('hook.exe not found at:', hookExe);
+    console.warn('hook.exe not found at:', hookExe, '- Manual snapshot & hotkeys active.');
+    notifyHookStatus(false, 'hook.exe not found. Manual snapshot & hotkeys active.');
     return;
   }
 
@@ -351,6 +508,12 @@ function startGlobalHook() {
     hookProcess = spawn(hookExe, [], {
       stdio: ['ignore', 'pipe', 'ignore'],
       windowsHide: true,
+    });
+
+    hookProcess.on('error', (err) => {
+      console.warn('hook.exe spawn error (antivirus block or permission):', err.message);
+      hookProcess = null;
+      notifyHookStatus(false, 'Automatic click hook restricted by antivirus. Hotkeys & Camera button active.');
     });
 
     let buffer = '';
@@ -434,11 +597,18 @@ function startGlobalHook() {
       }
     });
 
-    hookProcess.on('exit', () => {
+    hookProcess.on('exit', (code) => {
+      if (code !== 0 && code !== null) {
+        console.warn(`hook.exe exited with code ${code}, fallback active`);
+        notifyHookStatus(false, 'hook.exe exited. Hotkeys & Camera button active.');
+      }
       hookProcess = null;
     });
+
+    notifyHookStatus(true, 'Global click hook active');
   } catch (err) {
     console.error('Failed to spawn hook.exe:', err);
+    notifyHookStatus(false, 'hook.exe failed to spawn. Hotkeys & Camera button active.');
   }
 }
 

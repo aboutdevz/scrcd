@@ -96,9 +96,34 @@ if (fs.existsSync(cargoTomlPath)) {
   fs.writeFileSync(cargoTomlPath, cargo);
 }
 
+// 6b. Update tools/AssemblyInfo.cs & tools/app.manifest if they exist
+const assemblyInfoPath = path.join(rootDir, 'tools', 'AssemblyInfo.cs');
+if (fs.existsSync(assemblyInfoPath)) {
+  let asm = fs.readFileSync(assemblyInfoPath, 'utf8');
+  const fourPart = `${nextVersion}.0`;
+  asm = asm.replace(/AssemblyVersion\("[^"]+"\)/g, `AssemblyVersion("${fourPart}")`);
+  asm = asm.replace(/AssemblyFileVersion\("[^"]+"\)/g, `AssemblyFileVersion("${fourPart}")`);
+  asm = asm.replace(/AssemblyInformationalVersion\("[^"]+"\)/g, `AssemblyInformationalVersion("${nextVersion}")`);
+  fs.writeFileSync(assemblyInfoPath, asm);
+}
+
+const manifestPath = path.join(rootDir, 'tools', 'app.manifest');
+if (fs.existsSync(manifestPath)) {
+  let man = fs.readFileSync(manifestPath, 'utf8');
+  man = man.replace(/version="\d+\.\d+\.\d+\.\d+"/g, `version="${nextVersion}.0"`);
+  fs.writeFileSync(manifestPath, man);
+}
+
+// Recompile native tools with updated metadata
+try {
+  run('npm run build:tools');
+} catch (e) {
+  console.warn('Native tools build note:', e.message);
+}
+
 // 7. Commit & tag
 console.log('\nCommitting version bump and creating git tag...');
-run(`git add package.json package-lock.json src/config/version.ts index.html src-tauri/tauri.conf.json src-tauri/Cargo.toml`);
+run(`git add package.json package-lock.json src/config/version.ts index.html src-tauri/tauri.conf.json src-tauri/Cargo.toml tools/AssemblyInfo.cs tools/app.manifest bin/capture.exe bin/hook.exe`);
 run(`git commit -m "chore(release): v${nextVersion}"`);
 run(`git tag -a v${nextVersion} -m "Release v${nextVersion}"`);
 

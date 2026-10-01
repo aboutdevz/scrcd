@@ -3,6 +3,8 @@
   "private": true,
   "version": "1.2.0",
   "license": "MIT",
+  "description": "Step-by-Step SOP & Guide Creator",
+  "author": "SCRCD",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -60,6 +62,7 @@
   "build": {
     "appId": "com.scrcd.app",
     "productName": "SCRCD",
+    "copyright": "Copyright © 2026 SCRCD",
     "files": [
       "dist/**/*",
       "electron/**/*",

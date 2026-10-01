@@ -26,6 +26,7 @@ export const FloatingPill: React.FC<FloatingPillProps> = ({ isStandalone = false
 
   const [stepCount, setStepCount] = useState(steps.length);
   const [isPaused, setIsPaused] = useState(storePaused);
+  const [hookActive, setHookActive] = useState(true);
 
   useEffect(() => {
     if (isElectron()) {
@@ -37,11 +38,18 @@ export const FloatingPill: React.FC<FloatingPillProps> = ({ isStandalone = false
         const onPause = (_e: any, paused: boolean) => {
           setIsPaused(paused);
         };
+        const onHookStatus = (_e: any, status: { active: boolean; message?: string }) => {
+          if (typeof status?.active === 'boolean') {
+            setHookActive(status.active);
+          }
+        };
         electron.ipcRenderer.on('pill-step-count', onCount);
         electron.ipcRenderer.on('pill-pause-state', onPause);
+        electron.ipcRenderer.on('hook-status', onHookStatus);
         return () => {
           electron.ipcRenderer.removeListener('pill-step-count', onCount);
           electron.ipcRenderer.removeListener('pill-pause-state', onPause);
+          electron.ipcRenderer.removeListener('hook-status', onHookStatus);
         };
       }
     } else {
@@ -143,8 +151,16 @@ export const FloatingPill: React.FC<FloatingPillProps> = ({ isStandalone = false
       <button
         style={{ WebkitAppRegion: 'no-drag' } as any}
         onClick={handleSnapshot}
-        className="p-1.5 rounded-full hover:bg-slate-800 text-slate-300 hover:text-white transition-colors"
-        title="Take Screen Snapshot"
+        className={`p-1.5 rounded-full transition-colors ${
+          !hookActive
+            ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 ring-1 ring-amber-400/50'
+            : 'hover:bg-slate-800 text-slate-300 hover:text-white'
+        }`}
+        title={
+          !hookActive
+            ? 'Automatic click hook restricted by AV. Click here or press Ctrl+Shift+C / F10 to capture screenshot.'
+            : 'Take Screen Snapshot (or press Ctrl+Shift+C / F10)'
+        }
       >
         <Camera className="w-3.5 h-3.5" />
       </button>
