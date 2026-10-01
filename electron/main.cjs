@@ -13,7 +13,6 @@ app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 app.commandLine.appendSwitch('disable-background-networking');
 app.commandLine.appendSwitch('disable-component-update');
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=128');
 
 let mainWindow = null;
 let pillWindow = null;
@@ -122,7 +121,7 @@ function createPillWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.workAreaSize;
 
-  const pillWidth = 320;
+  const pillWidth = 395;
   const pillHeight = 52;
 
   pillWindow = new BrowserWindow({
@@ -161,6 +160,7 @@ function createPillWindow() {
     pillWindow.show();
     pillWindow.setAlwaysOnTop(true, 'screen-saver');
     pillWindow.webContents.send('pill-step-count', recordedSteps.length);
+    pillWindow.webContents.send('pill-scope-change', currentCaptureConfig.scope || 'monitor');
   });
 
   pillWindow.on('closed', () => {
@@ -658,6 +658,21 @@ ipcMain.handle('pause-recording', async () => {
     pillWindow.webContents.send('pill-pause-state', isRecordingPaused);
   }
   return isRecordingPaused;
+});
+
+ipcMain.handle('get-capture-scope', () => {
+  return currentCaptureConfig.scope || 'window';
+});
+
+ipcMain.handle('set-capture-scope', (_event, newScope) => {
+  if (['monitor', 'cursor', 'window', 'all'].includes(newScope)) {
+    currentCaptureConfig.scope = newScope;
+    if (pillWindow && !pillWindow.isDestroyed()) {
+      pillWindow.webContents.send('pill-scope-change', newScope);
+    }
+    return { success: true, scope: newScope };
+  }
+  return { success: false };
 });
 
 ipcMain.handle('manual-snapshot', async (_event, params = {}) => {

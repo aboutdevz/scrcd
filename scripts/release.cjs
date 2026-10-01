@@ -71,7 +71,9 @@ if (fs.existsSync(lockPath)) {
 // 5. Update src/config/version.ts & index.html if they exist
 const versionTsPath = path.join(rootDir, 'src', 'config', 'version.ts');
 if (fs.existsSync(versionTsPath)) {
-  fs.writeFileSync(versionTsPath, `export const APP_VERSION = '${nextVersion}';\n`);
+  let vContent = fs.readFileSync(versionTsPath, 'utf8');
+  vContent = vContent.replace(/export const APP_VERSION = '[^']+';/, `export const APP_VERSION = '${nextVersion}';`);
+  fs.writeFileSync(versionTsPath, vContent);
 }
 
 const indexPath = path.join(rootDir, 'index.html');

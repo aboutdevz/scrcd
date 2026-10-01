@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
-import { Project, Folder } from '@/types';
+import { Project, Folder, GuideVersion } from '@/types';
+import { api } from '@/services/api';
 import { compileAndExportMasterBinder, MasterBinderOptions } from '@/services/exporters/exportMasterBinder';
 import {
   BookOpen,
@@ -40,6 +41,10 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
   const [progressMsg, setProgressMsg] = useState('');
   const [exportError, setExportError] = useState<string | null>(null);
 
+  // Per-guide version selection
+  const [projectVersionsMap, setProjectVersionsMap] = useState<Record<string, GuideVersion[]>>({});
+  const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
+
   useEffect(() => {
     if (isOpen) {
       const folderProjects = projects.filter((p) =>
@@ -58,6 +63,24 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
       setExportError(null);
     }
   }, [isOpen, folderId, activeFolder, projects]);
+
+  useEffect(() => {
+    if (isOpen && orderedProjects.length > 0) {
+      const loadAllVersions = async () => {
+        const map: Record<string, GuideVersion[]> = {};
+        for (const p of orderedProjects) {
+          try {
+            const vers = await api.listProjectVersions(p.id);
+            map[p.id] = vers;
+          } catch {
+            map[p.id] = [];
+          }
+        }
+        setProjectVersionsMap(map);
+      };
+      loadAllVersions();
+    }
+  }, [isOpen, orderedProjects]);
 
   if (!isOpen) return null;
 
@@ -94,6 +117,7 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
       includeCoverPage: includeCover,
       includeTableOfContents: includeToc,
       format,
+      versionSelections: selectedVersions,
     };
 
     const res = await compileAndExportMasterBinder(
@@ -266,25 +290,53 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
                         {p.category}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={idx === 0 || isExporting}
-                        onClick={() => handleMoveUp(idx)}
-                        className="p-1 rounded hover:bg-secondary disabled:opacity-30 text-muted-foreground hover:text-foreground"
-                        title="Move Up"
-                      >
-                        <ArrowUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={idx === orderedProjects.length - 1 || isExporting}
-                        onClick={() => handleMoveDown(idx)}
-                        className="p-1 rounded hover:bg-secondary disabled:opacity-30 text-muted-foreground hover:text-foreground"
-                        title="Move Down"
-                      >
-                        <ArrowDown className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {projectVersionsMap[p.id] && projectVersionsMap[p.id].length > 0 ? (
+                        <select
+                          value={selectedVersions[p.id] || 'latest'}
+                          onChange={(e) => {
+                            setSelectedVersions((prev) => ({
+                              ...prev,
+                              [p.id]: e.target.value,
+                            }));
+                          }}
+                          disabled={isExporting}
+                          className="text-[11px] font-mono px-2 py-0.5 rounded bg-secondary/80 border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[170px] truncate"
+                          title="Select version of this guide to include in the handbook"
+                        >
+                          <option value="latest">Latest Draft (v{p.version})</option>
+                          {projectVersionsMap[p.id].map((ver) => (
+                            <option key={ver.id} value={ver.id}>
+                              v{ver.version} ({ver.stepsSnapshot.length} steps)
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary text-muted-foreground border border-border">
+                          v{p.version || '1.0.0'}
+                        </span>
+                      )}
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={idx === 0 || isExporting}
+                          onClick={() => handleMoveUp(idx)}
+                          className="p-1 rounded hover:bg-secondary disabled:opacity-30 text-muted-foreground hover:text-foreground"
+                          title="Move Up"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === orderedProjects.length - 1 || isExporting}
+                          onClick={() => handleMoveDown(idx)}
+                          className="p-1 rounded hover:bg-secondary disabled:opacity-30 text-muted-foreground hover:text-foreground"
+                          title="Move Down"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

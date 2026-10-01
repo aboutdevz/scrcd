@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
-import { api } from '@/services/api';
 import { Logo } from '@/components/common/Logo';
 import { APP_VERSION } from '@/config/version';
 
@@ -9,8 +8,8 @@ interface SplashScreenProps {
 }
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({ onComplete }) => {
-  const [progress, setProgress] = useState(15);
-  const [statusText, setStatusText] = useState('Initializing application runtime...');
+  const [progress, setProgress] = useState(30);
+  const [statusText, setStatusText] = useState('Initializing application...');
   const [isFadingOut, setIsFadingOut] = useState(false);
 
   const onCompleteRef = useRef(onComplete);
@@ -22,59 +21,36 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onComplete }) => {
     hasInitializedRef.current = true;
 
     let isMounted = true;
-    const startTime = Date.now();
 
     const initializeApp = async () => {
       try {
-        // Step 1: Storage & Folder Hydration
         if (!isMounted) return;
-        setStatusText('Connecting local storage and folders...');
-        setProgress(35);
-        await useStore.getState().loadFolders();
+        setStatusText('Loading workspace...');
+        setProgress(70);
 
-        await new Promise((r) => setTimeout(r, 120));
+        // Fast parallel hydration from local storage
+        await Promise.all([
+          useStore.getState().loadFolders(),
+          useStore.getState().loadCategories(),
+          useStore.getState().loadProjects(),
+        ]);
 
-        // Step 2: Native Bridge & Capture Sources Verification
         if (!isMounted) return;
-        setStatusText('Verifying desktop capture engine...');
-        setProgress(65);
-        try {
-          await api.getCaptureSources();
-        } catch (e) {
-          console.warn('Capture sources check warning:', e);
-        }
-
-        await new Promise((r) => setTimeout(r, 120));
-
-        // Step 3: Load Guides & Projects
-        if (!isMounted) return;
-        setStatusText('Loading guides and procedures...');
-        setProgress(90);
-        await useStore.getState().loadProjects();
-
-        // Step 4: Ready
-        if (!isMounted) return;
-        setStatusText('Workspace ready');
         setProgress(100);
+        setStatusText('Workspace ready');
 
-        // Smooth minimum visible duration (~750ms) to ensure readable progress without screen flicker
-        const elapsed = Date.now() - startTime;
-        const remainingDelay = Math.max(0, 750 - elapsed);
-        await new Promise((r) => setTimeout(r, remainingDelay));
-
-        if (!isMounted) return;
+        // Snappy fadeout transition
         setIsFadingOut(true);
-
         setTimeout(() => {
           if (isMounted) {
             onCompleteRef.current();
           }
-        }, 350);
+        }, 150);
       } catch (err) {
         console.warn('Initialization error in splash screen:', err);
         if (isMounted) {
           setIsFadingOut(true);
-          setTimeout(() => onCompleteRef.current(), 200);
+          setTimeout(() => onCompleteRef.current(), 100);
         }
       }
     };
@@ -88,7 +64,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onComplete }) => {
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background select-none transition-opacity duration-350 ease-out ${
+      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background select-none transition-opacity duration-150 ease-out ${
         isFadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >

@@ -65,6 +65,8 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
     setSearchQuery,
     selectedCategory,
     setSelectedCategory,
+    categories,
+    addCategory,
     selectedTag,
     setSelectedTag,
     getAllTags,
@@ -76,7 +78,9 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
   // New Guide Modal State
   const [isCreating, setIsCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
-  const [newCategory, setNewCategory] = useState<CategoryType>('SOP');
+  const [newCategory, setNewCategory] = useState<string>('SOP');
+  const [isAddingNewCat, setIsAddingNewCat] = useState(false);
+  const [customCatInput, setCustomCatInput] = useState('');
   const [newVersion, setNewVersion] = useState('1.0.0');
   const [newDesc, setNewDesc] = useState('');
   const [newFolderId, setNewFolderId] = useState<string | null>(null);
@@ -86,7 +90,9 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
   // Rename/Edit Guide State
   const [projectToRename, setProjectToRename] = useState<Project | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
-  const [renameCategory, setRenameCategory] = useState<CategoryType>('SOP');
+  const [renameCategory, setRenameCategory] = useState<string>('SOP');
+  const [isAddingRenameCat, setIsAddingRenameCat] = useState(false);
+  const [customRenameCatInput, setCustomRenameCatInput] = useState('');
   const [renameVersion, setRenameVersion] = useState('1.0.0');
   const [renameDesc, setRenameDesc] = useState('');
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
@@ -270,13 +276,7 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
     setRenameTags(renameTags.filter((t) => t !== tag));
   };
 
-  const categories: (CategoryType | 'All')[] = [
-    'All',
-    'SOP',
-    'Tutorial',
-    'Onboarding',
-    'Troubleshooting',
-  ];
+  const categoryFilterList: string[] = ['All', ...categories];
 
   // Filtering Logic
   const filteredProjects = projects.filter((p) => {
@@ -288,7 +288,9 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
     }
 
     // 2. Category
-    const matchesCat = selectedCategory === 'All' || p.category === selectedCategory;
+    const matchesCat =
+      selectedCategory === 'All' ||
+      (p.category && p.category.toLowerCase() === selectedCategory.toLowerCase());
 
     // 3. Custom Tag
     const matchesTag = !selectedTag || (Array.isArray(p.tags) && p.tags.includes(selectedTag));
@@ -713,12 +715,12 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
           <div className="flex items-center justify-between gap-3 flex-wrap text-xs">
             {/* Category Filter Pills */}
             <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-              {categories.map((cat) => (
+              {categoryFilterList.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
                   className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
-                    selectedCategory === cat
+                    selectedCategory.toLowerCase() === cat.toLowerCase()
                       ? 'bg-foreground text-background font-semibold shadow-xs'
                       : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
                   }`}
@@ -998,16 +1000,79 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                       <label className="block text-xs font-semibold text-foreground mb-1.5">
                         Category
                       </label>
-                      <select
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value as CategoryType)}
-                        className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                      >
-                        <option value="SOP">SOP</option>
-                        <option value="Tutorial">Tutorial</option>
-                        <option value="Onboarding">Onboarding</option>
-                        <option value="Troubleshooting">Troubleshooting</option>
-                      </select>
+                      {isAddingNewCat ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            autoFocus
+                            placeholder="Category name..."
+                            value={customCatInput}
+                            onChange={(e) => setCustomCatInput(e.target.value)}
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const trimmed = customCatInput.trim();
+                                if (trimmed) {
+                                  await addCategory(trimmed);
+                                  setNewCategory(trimmed);
+                                  setCustomCatInput('');
+                                  setIsAddingNewCat(false);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setIsAddingNewCat(false);
+                                setCustomCatInput('');
+                              }
+                            }}
+                            className="w-full px-2 py-1.5 rounded-lg bg-secondary/70 border border-primary text-xs text-foreground focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const trimmed = customCatInput.trim();
+                              if (trimmed) {
+                                await addCategory(trimmed);
+                                setNewCategory(trimmed);
+                                setCustomCatInput('');
+                                setIsAddingNewCat(false);
+                              }
+                            }}
+                            className="p-1.5 rounded-md bg-primary text-white hover:bg-primary/90 transition-colors shrink-0"
+                            title="Save Category"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddingNewCat(false);
+                              setCustomCatInput('');
+                            }}
+                            className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors shrink-0"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <select
+                          value={newCategory}
+                          onChange={(e) => {
+                            if (e.target.value === '__new__') {
+                              setIsAddingNewCat(true);
+                            } else {
+                              setNewCategory(e.target.value);
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          {categories.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                          <option value="__new__">+ Add Category...</option>
+                        </select>
+                      )}
                     </div>
 
                     <div>
@@ -1163,19 +1228,79 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="text-xs font-semibold text-foreground mb-1.5 block">Category</label>
-                      <select
-                        value={renameCategory}
-                        onChange={(e) => setRenameCategory(e.target.value as CategoryType)}
-                        className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                      >
-                        {categories
-                          .filter((c) => c !== 'All')
-                          .map((cat) => (
+                      {isAddingRenameCat ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            autoFocus
+                            placeholder="Category name..."
+                            value={customRenameCatInput}
+                            onChange={(e) => setCustomRenameCatInput(e.target.value)}
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const trimmed = customRenameCatInput.trim();
+                                if (trimmed) {
+                                  await addCategory(trimmed);
+                                  setRenameCategory(trimmed);
+                                  setCustomRenameCatInput('');
+                                  setIsAddingRenameCat(false);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setIsAddingRenameCat(false);
+                                setCustomRenameCatInput('');
+                              }
+                            }}
+                            className="w-full px-2 py-1.5 rounded-lg bg-secondary/70 border border-primary text-xs text-foreground focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const trimmed = customRenameCatInput.trim();
+                              if (trimmed) {
+                                await addCategory(trimmed);
+                                setRenameCategory(trimmed);
+                                setCustomRenameCatInput('');
+                                setIsAddingRenameCat(false);
+                              }
+                            }}
+                            className="p-1.5 rounded-md bg-primary text-white hover:bg-primary/90 transition-colors shrink-0"
+                            title="Save Category"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddingRenameCat(false);
+                              setCustomRenameCatInput('');
+                            }}
+                            className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors shrink-0"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <select
+                          value={renameCategory}
+                          onChange={(e) => {
+                            if (e.target.value === '__new__') {
+                              setIsAddingRenameCat(true);
+                            } else {
+                              setRenameCategory(e.target.value);
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          {categories.map((cat) => (
                             <option key={cat} value={cat}>
                               {cat}
                             </option>
                           ))}
-                      </select>
+                          <option value="__new__">+ Add Category...</option>
+                        </select>
+                      )}
                     </div>
 
                     <div>

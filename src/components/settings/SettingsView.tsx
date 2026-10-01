@@ -16,10 +16,13 @@ import {
   AlertCircle,
   Upload,
   X,
+  Tag,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
-  const { branding, updateBranding, aiConfig, setAiConfig } = useStore();
+  const { branding, updateBranding, aiConfig, setAiConfig, categories, addCategory, deleteCategory } = useStore();
 
   const [companyName, setCompanyName] = useState(branding.companyName);
   const [author, setAuthor] = useState(branding.author);
@@ -27,6 +30,31 @@ export const SettingsView: React.FC = () => {
   const [footerText, setFooterText] = useState(branding.footerText);
   const [logoUrl, setLogoUrl] = useState(branding.logoUrl || '');
   const [saved, setSaved] = useState(false);
+
+  // Category management
+  const [newCatInput, setNewCatInput] = useState('');
+  const [catError, setCatError] = useState<string | null>(null);
+
+  const handleAddCategory = async () => {
+    const trimmed = newCatInput.trim();
+    if (!trimmed) return;
+    if (categories.some((c) => c.toLowerCase() === trimmed.toLowerCase())) {
+      setCatError('Category already exists');
+      return;
+    }
+    setCatError(null);
+    await addCategory(trimmed);
+    setNewCatInput('');
+  };
+
+  const handleDeleteCategory = async (catToDelete: string) => {
+    if (categories.length <= 1) {
+      setCatError('At least one category is required');
+      return;
+    }
+    setCatError(null);
+    await deleteCategory(catToDelete);
+  };
 
   const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -357,6 +385,67 @@ export const SettingsView: React.FC = () => {
                   />
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Section: Category Management */}
+          <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+            <div className="flex items-center gap-2 border-b border-border pb-3">
+              <Tag className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">Guide Categories</h3>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Define the categories available when organizing and filtering your standard operating procedures.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newCatInput}
+                onChange={(e) => {
+                  setNewCatInput(e.target.value);
+                  if (catError) setCatError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCategory();
+                  }
+                }}
+                placeholder="New category name..."
+                className="flex-1 px-3 py-1.5 rounded-lg bg-secondary/50 border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={handleAddCategory}
+                disabled={!newCatInput.trim()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold text-xs hover:bg-primary/90 transition-colors disabled:opacity-50 shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Category</span>
+              </button>
+            </div>
+
+            {catError && <p className="text-xs text-red-500 font-medium">{catError}</p>}
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {categories.map((cat) => (
+                <div
+                  key={cat}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/70 border border-border text-xs font-medium text-foreground"
+                >
+                  <span>{cat}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteCategory(cat)}
+                    className="p-0.5 rounded text-muted-foreground hover:text-red-500 hover:bg-secondary transition-colors"
+                    title={`Delete category ${cat}`}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 

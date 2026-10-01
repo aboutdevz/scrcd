@@ -27,6 +27,7 @@ export const FloatingPill: React.FC<FloatingPillProps> = ({ isStandalone = false
   const [stepCount, setStepCount] = useState(steps.length);
   const [isPaused, setIsPaused] = useState(storePaused);
   const [hookActive, setHookActive] = useState(true);
+  const [captureScope, setCaptureScope] = useState<'monitor' | 'cursor'>('cursor');
 
   useEffect(() => {
     if (isElectron()) {
@@ -43,13 +44,28 @@ export const FloatingPill: React.FC<FloatingPillProps> = ({ isStandalone = false
             setHookActive(status.active);
           }
         };
+        const onScope = (_e: any, scope: string) => {
+          if (scope === 'monitor' || scope === 'cursor') {
+            setCaptureScope(scope);
+          }
+        };
+
         electron.ipcRenderer.on('pill-step-count', onCount);
         electron.ipcRenderer.on('pill-pause-state', onPause);
         electron.ipcRenderer.on('hook-status', onHookStatus);
+        electron.ipcRenderer.on('pill-scope-change', onScope);
+
+        electron.ipcRenderer.invoke('get-capture-scope').then((scope: string) => {
+          if (scope === 'monitor' || scope === 'cursor') {
+            setCaptureScope(scope);
+          }
+        }).catch(() => {});
+
         return () => {
           electron.ipcRenderer.removeListener('pill-step-count', onCount);
           electron.ipcRenderer.removeListener('pill-pause-state', onPause);
           electron.ipcRenderer.removeListener('hook-status', onHookStatus);
+          electron.ipcRenderer.removeListener('pill-scope-change', onScope);
         };
       }
     } else {
@@ -106,6 +122,16 @@ export const FloatingPill: React.FC<FloatingPillProps> = ({ isStandalone = false
     storeStopRecording();
   };
 
+  const handleToggleScope = async (targetScope: 'monitor' | 'cursor') => {
+    setCaptureScope(targetScope);
+    if (isElectron()) {
+      const electron = getElectron();
+      if (electron && electron.ipcRenderer) {
+        await electron.ipcRenderer.invoke('set-capture-scope', targetScope);
+      }
+    }
+  };
+
   const containerClasses = isStandalone
     ? "fixed inset-0 w-full h-full flex items-center justify-between px-3 py-1.5 bg-slate-900/95 border border-slate-700/80 rounded-2xl shadow-2xl text-white select-none overflow-hidden"
     : "fixed bottom-6 right-6 z-50 flex items-center gap-2 p-2 rounded-full bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 shadow-2xl text-white select-none animate-in fade-in slide-in-from-bottom-4 duration-300";
@@ -135,6 +161,36 @@ export const FloatingPill: React.FC<FloatingPillProps> = ({ isStandalone = false
         <span className="text-xs font-semibold tabular-nums">
           {stepCount} {stepCount === 1 ? 'Step' : 'Steps'}
         </span>
+      </div>
+
+      {/* Mode Toggle: Segmented Full vs Cursor */}
+      <div 
+        style={{ WebkitAppRegion: 'no-drag' } as any}
+        className="flex items-center p-0.5 bg-slate-800/90 rounded-full border border-slate-700/60 text-[10px] font-semibold tracking-tight"
+        title="Toggle capture mode: Full Screen or Area Near Cursor"
+      >
+        <button
+          onClick={() => handleToggleScope('monitor')}
+          className={`px-2 py-0.5 rounded-full transition-all ${
+            captureScope === 'monitor'
+              ? 'bg-primary text-white shadow-xs'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+          title="Full Screen capture mode"
+        >
+          Full
+        </button>
+        <button
+          onClick={() => handleToggleScope('cursor')}
+          className={`px-2 py-0.5 rounded-full transition-all ${
+            captureScope === 'cursor'
+              ? 'bg-primary text-white shadow-xs'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+          title="Near Cursor capture mode (1200x750 viewport)"
+        >
+          Cursor
+        </button>
       </div>
 
       {/* Pause / Resume */}

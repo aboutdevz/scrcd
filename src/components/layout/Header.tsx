@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { Logo } from '@/components/common/Logo';
 import { APP_VERSION } from '@/config/version';
+import { SaveVersionModal } from '@/components/editor/SaveVersionModal';
+import { VersionHistoryDrawer } from '@/components/editor/VersionHistoryDrawer';
 import {
   FolderOpen,
   Layers,
@@ -15,6 +17,8 @@ import {
   HelpCircle,
   Info,
   BookOpen,
+  History,
+  Bookmark,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -41,7 +45,11 @@ export const Header: React.FC<HeaderProps> = ({
     folders,
     setCommandPaletteOpen,
     setIsAboutOpen,
+    hasUnsavedChanges,
   } = useStore();
+
+  const [isSaveVersionOpen, setIsSaveVersionOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -218,12 +226,15 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
                 <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
               </button>
-              <span
-                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary/80 text-muted-foreground border border-border shrink-0"
-                title={`Guide Version: ${activeProject.version || '1.0.0'}`}
+              <button
+                type="button"
+                onClick={() => setIsHistoryOpen(true)}
+                className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-secondary/80 hover:bg-secondary text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+                title={`Guide Version: ${activeProject.version || '1.0.0'}. Click to view Version History & Rollback.`}
               >
-                v{activeProject.version || '1.0.0'}
-              </span>
+                <History className="w-3 h-3 text-primary" />
+                <span>v{activeProject.version || '1.0.0'}</span>
+              </button>
             </div>
           )
         ) : null}
@@ -297,6 +308,29 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
+        {/* Save Version Button (only when in editor with activeProject) */}
+        {currentView === 'editor' && activeProject && (
+          <button
+            onClick={() => setIsSaveVersionOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium text-xs transition-colors shadow-xs ${
+              hasUnsavedChanges
+                ? 'bg-primary/10 border-primary/40 text-primary hover:bg-primary/20'
+                : 'border-border bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground'
+            }`}
+            title={
+              hasUnsavedChanges
+                ? 'Guide has unsaved changes. Click to save a version snapshot.'
+                : 'Save a new version snapshot'
+            }
+          >
+            <Bookmark className="w-3.5 h-3.5" />
+            <span>Save Version</span>
+            {hasUnsavedChanges && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" title="Unsaved Changes" />
+            )}
+          </button>
+        )}
+
         {/* Export Button (only when in editor with active steps) */}
         {currentView === 'editor' && (
           <button
@@ -331,6 +365,18 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         )}
       </div>
+
+      {/* Save Version Modal */}
+      <SaveVersionModal
+        isOpen={isSaveVersionOpen}
+        onClose={() => setIsSaveVersionOpen(false)}
+      />
+
+      {/* Version History Drawer */}
+      <VersionHistoryDrawer
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+      />
     </header>
   );
 };

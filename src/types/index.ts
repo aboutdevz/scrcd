@@ -1,6 +1,16 @@
 export type ActionType = 'click' | 'double_click' | 'right_click' | 'navigation' | 'keypress' | 'snapshot';
 
-export type CategoryType = 'SOP' | 'Tutorial' | 'Troubleshooting' | 'Onboarding' | 'General';
+export type CategoryType = 'SOP' | 'Tutorial' | 'Troubleshooting' | 'Onboarding' | 'General' | (string & {});
+
+export interface GuideVersion {
+  id: string;
+  projectId: string;
+  version: string;
+  note?: string;
+  createdAt: number;
+  projectSnapshot: Project;
+  stepsSnapshot: Step[];
+}
 
 export interface Folder {
   id: string;

@@ -1,19 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { useStore } from '@/store/useStore';
 import { Header } from '@/components/layout/Header';
 import { ProjectDashboard } from '@/components/dashboard/ProjectDashboard';
-import { EditorView } from '@/components/editor/EditorView';
-import { SettingsView } from '@/components/settings/SettingsView';
 import { FloatingPill } from '@/components/recorder/FloatingPill';
-import { ExportModal } from '@/components/export/ExportModal';
-import { MasterBinderModal } from '@/components/export/MasterBinderModal';
-import { SimulatedCaptureModal } from '@/components/common/SimulatedCaptureModal';
-import { CaptureSetupModal } from '@/components/recorder/CaptureSetupModal';
 import { SplashScreen } from '@/components/common/SplashScreen';
-import { AboutModal } from '@/components/common/AboutModal';
 import { CommandPalette } from '@/components/common/CommandPalette';
-import { WelcomeModal } from '@/components/onboarding/WelcomeModal';
 import { api, isElectron, getElectron } from '@/services/api';
+
+// Code-split heavy views and modals to keep initial boot bundle lean (<200 kB)
+const EditorView = lazy(() => import('@/components/editor/EditorView').then((m) => ({ default: m.EditorView })));
+const SettingsView = lazy(() => import('@/components/settings/SettingsView').then((m) => ({ default: m.SettingsView })));
+const ExportModal = lazy(() => import('@/components/export/ExportModal').then((m) => ({ default: m.ExportModal })));
+const MasterBinderModal = lazy(() => import('@/components/export/MasterBinderModal').then((m) => ({ default: m.MasterBinderModal })));
+const SimulatedCaptureModal = lazy(() => import('@/components/common/SimulatedCaptureModal').then((m) => ({ default: m.SimulatedCaptureModal })));
+const CaptureSetupModal = lazy(() => import('@/components/recorder/CaptureSetupModal').then((m) => ({ default: m.CaptureSetupModal })));
+const AboutModal = lazy(() => import('@/components/common/AboutModal').then((m) => ({ default: m.AboutModal })));
+const WelcomeModal = lazy(() => import('@/components/onboarding/WelcomeModal').then((m) => ({ default: m.WelcomeModal })));
 import { generateMockScreenshot } from '@/services/mockData';
 import { Step, CaptureConfig } from '@/types';
 
@@ -57,6 +59,17 @@ export const App: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setCommandPaletteOpen]);
+
+  useEffect(() => {
+    if (isPillMode) {
+      document.documentElement.classList.add('pill-mode');
+      document.body.classList.add('pill-mode');
+      document.documentElement.style.background = 'transparent';
+      document.documentElement.style.backgroundColor = 'transparent';
+      document.body.style.background = 'transparent';
+      document.body.style.backgroundColor = 'transparent';
+    }
+  }, [isPillMode]);
 
   // Recording listener
   useEffect(() => {
@@ -192,7 +205,7 @@ export const App: React.FC = () => {
   // If in floating pill window mode, render ONLY the floating pill on transparent background
   if (isPillMode) {
     return (
-      <div className="w-screen h-screen bg-transparent p-1 overflow-hidden select-none">
+      <div className="w-screen h-screen bg-transparent p-0 overflow-hidden select-none flex items-center justify-center">
         <FloatingPill isStandalone={true} />
       </div>
     );
@@ -219,62 +232,76 @@ export const App: React.FC = () => {
             onOpenCaptureSetup={() => setIsCaptureSetupOpen(true)}
           />
         )}
-        {currentView === 'editor' && <EditorView />}
-        {currentView === 'settings' && <SettingsView />}
+        <Suspense fallback={null}>
+          {currentView === 'editor' && <EditorView />}
+          {currentView === 'settings' && <SettingsView />}
+        </Suspense>
       </div>
 
       {/* Floating Recorder Controller for Browser/Dev mode fallback */}
       {!isElectron() && <FloatingPill isStandalone={false} />}
 
-      {/* Export Modal (Single Guide) */}
-      <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
+      <Suspense fallback={null}>
+        {/* Export Modal (Single Guide) */}
+        {isExportOpen && <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />}
 
-      {/* Master Binder Export Modal (Multi-guide Folder Handbook) */}
-      <MasterBinderModal
-        isOpen={isMasterBinderOpen}
-        onClose={() => setIsMasterBinderOpen(false)}
-        folderId={masterBinderFolderId}
-      />
+        {/* Master Binder Export Modal (Multi-guide Folder Handbook) */}
+        {isMasterBinderOpen && (
+          <MasterBinderModal
+            isOpen={isMasterBinderOpen}
+            onClose={() => setIsMasterBinderOpen(false)}
+            folderId={masterBinderFolderId}
+          />
+        )}
 
-      {/* Browser Simulation Modal */}
-      <SimulatedCaptureModal
-        isOpen={isSimulatorOpen}
-        onClose={() => setIsSimulatorOpen(false)}
-      />
+        {/* Browser Simulation Modal */}
+        {isSimulatorOpen && (
+          <SimulatedCaptureModal
+            isOpen={isSimulatorOpen}
+            onClose={() => setIsSimulatorOpen(false)}
+          />
+        )}
 
-      {/* Capture Setup Modal */}
-      <CaptureSetupModal
-        isOpen={isCaptureSetupOpen}
-        onClose={() => setIsCaptureSetupOpen(false)}
-        onStart={async (config: CaptureConfig) => {
-          setIsCaptureSetupOpen(false);
-          await startRecording(config);
-        }}
-      />
+        {/* Capture Setup Modal */}
+        {isCaptureSetupOpen && (
+          <CaptureSetupModal
+            isOpen={isCaptureSetupOpen}
+            onClose={() => setIsCaptureSetupOpen(false)}
+            onStart={async (config: CaptureConfig) => {
+              setIsCaptureSetupOpen(false);
+              await startRecording(config);
+            }}
+          />
+        )}
 
-      {/* "About SCRCD" Modal (v1.2.0) */}
-      <AboutModal
-        isOpen={isAboutOpen}
-        onClose={() => setIsAboutOpen(false)}
-      />
+        {/* "About SCRCD" Modal (v1.2.0) */}
+        {isAboutOpen && (
+          <AboutModal
+            isOpen={isAboutOpen}
+            onClose={() => setIsAboutOpen(false)}
+          />
+        )}
+
+        {/* Onboarding Welcome Screen */}
+        {isWelcomeOpen && (
+          <WelcomeModal
+            isOpen={isWelcomeOpen}
+            onClose={() => setIsWelcomeOpen(false)}
+            onStartRecording={() => {
+              setIsWelcomeOpen(false);
+              setIsCaptureSetupOpen(true);
+            }}
+            onOpenCreateGuide={() => {
+              setIsWelcomeOpen(false);
+              useStore.getState().setCurrentView('dashboard');
+            }}
+            onLoadSample={handleLoadSample}
+          />
+        )}
+      </Suspense>
 
       {/* Global Command Palette (Ctrl+K) */}
       <CommandPalette />
-
-      {/* Onboarding Welcome Screen */}
-      <WelcomeModal
-        isOpen={isWelcomeOpen}
-        onClose={() => setIsWelcomeOpen(false)}
-        onStartRecording={() => {
-          setIsWelcomeOpen(false);
-          setIsCaptureSetupOpen(true);
-        }}
-        onOpenCreateGuide={() => {
-          setIsWelcomeOpen(false);
-          useStore.getState().setCurrentView('dashboard');
-        }}
-        onLoadSample={handleLoadSample}
-      />
     </div>
   );
 };

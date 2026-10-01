@@ -1,5 +1,8 @@
-import { Project, Step, Section, BrandingProfile, Folder } from '@/types';
+import { Project, Step, Section, BrandingProfile, Folder, GuideVersion } from '@/types';
 import { generateMockScreenshot } from './mockData';
+
+// Default categories
+export const DEFAULT_CATEGORIES: string[] = ['SOP', 'Tutorial', 'Troubleshooting', 'Onboarding', 'General'];
 
 // Check if running inside desktop Tauri runtime
 export const isTauri = (): boolean => {
@@ -38,6 +41,42 @@ const stepListeners: StepCallback[] = [];
 
 // Dev-Bridge API Client
 export const api = {
+  async listCategories(): Promise<string[]> {
+    const raw = localStorage.getItem('scrcd_categories');
+    if (!raw) {
+      localStorage.setItem('scrcd_categories', JSON.stringify(DEFAULT_CATEGORIES));
+      return DEFAULT_CATEGORIES;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_CATEGORIES;
+    } catch {
+      return DEFAULT_CATEGORIES;
+    }
+  },
+
+  async saveCategories(categories: string[]): Promise<void> {
+    localStorage.setItem('scrcd_categories', JSON.stringify(categories));
+  },
+
+  async addCategory(category: string): Promise<string[]> {
+    const trimmed = category.trim();
+    if (!trimmed) return await this.listCategories();
+    const list = await this.listCategories();
+    if (!list.some((c) => c.toLowerCase() === trimmed.toLowerCase())) {
+      list.push(trimmed);
+      await this.saveCategories(list);
+    }
+    return list;
+  },
+
+  async deleteCategory(category: string): Promise<string[]> {
+    const list = await this.listCategories();
+    const filtered = list.filter((c) => c.toLowerCase() !== category.toLowerCase());
+    await this.saveCategories(filtered);
+    return filtered;
+  },
+
   async listFolders(): Promise<Folder[]> {
     const raw = localStorage.getItem('scrcd_folders');
     if (!raw) {
@@ -175,6 +214,7 @@ export const api = {
     const filtered = list.filter((p) => p.id !== id);
     localStorage.setItem('scrcd_projects', JSON.stringify(filtered));
     localStorage.removeItem(`scrcd_steps_${id}`);
+    localStorage.removeItem(`scrcd_versions_${id}`);
   },
 
   async listSteps(projectId: string): Promise<Step[]> {
@@ -380,6 +420,55 @@ export const api = {
       }
     }
     return { success: false, error: 'Native PDF export is available in Desktop mode' };
+  },
+
+  async listProjectVersions(projectId: string): Promise<GuideVersion[]> {
+    const raw = localStorage.getItem(`scrcd_versions_${projectId}`);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveProjectVersion(version: GuideVersion): Promise<void> {
+    const versions = await this.listProjectVersions(version.projectId);
+    const idx = versions.findIndex((v) => v.id === version.id);
+    if (idx >= 0) {
+      versions[idx] = version;
+    } else {
+      versions.unshift(version);
+    }
+    localStorage.setItem(`scrcd_versions_${version.projectId}`, JSON.stringify(versions));
+  },
+
+  async deleteProjectVersion(projectId: string, versionId: string): Promise<void> {
+    const versions = await this.listProjectVersions(projectId);
+    const filtered = versions.filter((v) => v.id !== versionId);
+    localStorage.setItem(`scrcd_versions_${projectId}`, JSON.stringify(filtered));
+  },
+
+  async restoreProjectVersion(
+    projectId: string,
+    versionId: string
+  ): Promise<{ project: Project; steps: Step[] } | null> {
+    const versions = await this.listProjectVersions(projectId);
+    const found = versions.find((v) => v.id === versionId);
+    if (!found) return null;
+
+    const currentProject = await this.getProject(projectId);
+    const restoredProject: Project = {
+      ...(currentProject || found.projectSnapshot),
+      ...found.projectSnapshot,
+      id: projectId,
+      version: found.version,
+      updatedAt: Date.now(),
+    };
+    await this.saveProject(restoredProject);
+    await this.saveStepsBatch(projectId, found.stepsSnapshot);
+    return { project: restoredProject, steps: found.stepsSnapshot };
   },
 
   getGlobalBranding(): BrandingProfile {

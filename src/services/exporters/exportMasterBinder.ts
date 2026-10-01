@@ -12,6 +12,7 @@ export interface MasterBinderOptions {
   includeCoverPage: boolean;
   includeTableOfContents: boolean;
   format: 'pdf' | 'html' | 'docx';
+  versionSelections?: Record<string, string>;
 }
 
 function escapeHtml(str: string): string {
@@ -747,10 +748,32 @@ export async function compileAndExportMasterBinder(
 
     for (let i = 0; i < projects.length; i++) {
       const p = projects[i];
-      onProgress?.(`Baking annotations for "${p.title}" (${i + 1}/${projects.length})...`);
-      const rawSteps = await api.listSteps(p.id);
+      const selectedVersionId = options.versionSelections?.[p.id];
+      let projectToUse = p;
+      let rawSteps: Step[] = [];
+
+      if (selectedVersionId && selectedVersionId !== 'latest') {
+        const versions = await api.listProjectVersions(p.id);
+        const ver = versions.find((v) => v.id === selectedVersionId);
+        if (ver) {
+          projectToUse = {
+            ...p,
+            version: ver.version,
+            title: ver.projectSnapshot?.title || p.title,
+            description: ver.projectSnapshot?.description || p.description,
+            category: ver.projectSnapshot?.category || p.category,
+          };
+          rawSteps = ver.stepsSnapshot || [];
+        } else {
+          rawSteps = await api.listSteps(p.id);
+        }
+      } else {
+        rawSteps = await api.listSteps(p.id);
+      }
+
+      onProgress?.(`Baking annotations for "${projectToUse.title}" (${i + 1}/${projects.length})...`);
       const bakedSteps = await bakeStepsForExport(rawSteps);
-      guidesWithSteps.push({ project: p, steps: bakedSteps });
+      guidesWithSteps.push({ project: projectToUse, steps: bakedSteps });
     }
 
     const docTitle = options.title || (folder ? `${folder.name} Handbook` : 'Operations Master Handbook');

@@ -1,11 +1,26 @@
 import { create } from 'zustand';
-import { Project, Step, AnnotationShape, AnnotationTool, BrandingProfile, Section, Folder } from '@/types';
-import { api } from '@/services/api';
+import { Project, Step, AnnotationShape, AnnotationTool, BrandingProfile, Section, Folder, GuideVersion } from '@/types';
+import { api, DEFAULT_CATEGORIES } from '@/services/api';
 
 interface AppState {
   // Navigation
   currentView: 'dashboard' | 'editor' | 'settings';
   setCurrentView: (view: 'dashboard' | 'editor' | 'settings') => void;
+
+  // Categories
+  categories: string[];
+  loadCategories: () => Promise<void>;
+  addCategory: (category: string) => Promise<void>;
+  deleteCategory: (category: string) => Promise<void>;
+
+  // Versions & Change Detection
+  hasUnsavedChanges: boolean;
+  setHasUnsavedChanges: (val: boolean) => void;
+  projectVersions: GuideVersion[];
+  loadProjectVersions: (projectId: string) => Promise<void>;
+  saveCurrentVersion: (versionTag: string, note?: string) => Promise<GuideVersion | null>;
+  restoreProjectVersion: (versionId: string) => Promise<void>;
+  deleteProjectVersion: (versionId: string) => Promise<void>;
 
   // Folders
   folders: Folder[];
@@ -113,6 +128,80 @@ export const useStore = create<AppState>((set, get) => ({
   currentView: 'dashboard',
   setCurrentView: (view) => set({ currentView: view }),
 
+  // Categories
+  categories: DEFAULT_CATEGORIES,
+  loadCategories: async () => {
+    const categories = await api.listCategories();
+    set({ categories });
+  },
+  addCategory: async (category: string) => {
+    const categories = await api.addCategory(category);
+    set({ categories });
+  },
+  deleteCategory: async (category: string) => {
+    const categories = await api.deleteCategory(category);
+    set({ categories });
+  },
+
+  // Versions & Change Detection
+  hasUnsavedChanges: false,
+  setHasUnsavedChanges: (val) => set({ hasUnsavedChanges: val }),
+  projectVersions: [],
+  loadProjectVersions: async (projectId: string) => {
+    const projectVersions = await api.listProjectVersions(projectId);
+    set({ projectVersions });
+  },
+  saveCurrentVersion: async (versionTag: string, note?: string) => {
+    const { activeProject, steps } = get();
+    if (!activeProject) return null;
+
+    const versionStr = versionTag.trim();
+    const verId = `ver_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const versionRecord: GuideVersion = {
+      id: verId,
+      projectId: activeProject.id,
+      version: versionStr,
+      note: note ? note.trim() : undefined,
+      createdAt: Date.now(),
+      projectSnapshot: { ...activeProject, version: versionStr },
+      stepsSnapshot: steps.map((s) => ({ ...s })),
+    };
+
+    await api.saveProjectVersion(versionRecord);
+    const updatedProj: Project = { ...activeProject, version: versionStr, updatedAt: Date.now() };
+    await api.saveProject(updatedProj);
+
+    set((state) => ({
+      activeProject: updatedProj,
+      projects: state.projects.map((p) => (p.id === updatedProj.id ? updatedProj : p)),
+      hasUnsavedChanges: false,
+    }));
+
+    await get().loadProjectVersions(activeProject.id);
+    return versionRecord;
+  },
+  restoreProjectVersion: async (versionId: string) => {
+    const { activeProject } = get();
+    if (!activeProject) return;
+    const restored = await api.restoreProjectVersion(activeProject.id, versionId);
+    if (restored) {
+      set({
+        activeProject: restored.project,
+        steps: restored.steps,
+        activeStepId: restored.steps[0]?.id ?? null,
+        hasUnsavedChanges: false,
+      });
+      await get().loadProjects();
+      await get().loadProjectVersions(activeProject.id);
+    }
+  },
+  deleteProjectVersion: async (versionId: string) => {
+    const { activeProject } = get();
+    if (!activeProject) return;
+    await api.deleteProjectVersion(activeProject.id, versionId);
+    await get().loadProjectVersions(activeProject.id);
+  },
+
   // Folders
   folders: [],
   activeFolderId: null,
@@ -213,6 +302,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({
       projects: state.projects.map((p) => (p.id === project.id ? project : p)),
       activeProject: state.activeProject?.id === project.id ? project : state.activeProject,
+      hasUnsavedChanges: true,
     }));
   },
 
@@ -223,14 +313,16 @@ export const useStore = create<AppState>((set, get) => ({
       projects: list,
       activeProject: get().activeProject?.id === id ? null : get().activeProject,
       currentView: 'dashboard',
+      hasUnsavedChanges: false,
     });
   },
 
   selectProject: async (id) => {
     const project = await api.getProject(id);
     if (project) {
-      set({ activeProject: project, currentView: 'editor' });
+      set({ activeProject: project, currentView: 'editor', hasUnsavedChanges: false });
       await get().loadSteps(id);
+      await get().loadProjectVersions(id);
     }
   },
 
@@ -286,6 +378,7 @@ export const useStore = create<AppState>((set, get) => ({
     await api.saveStep(step);
     set((state) => ({
       steps: state.steps.map((s) => (s.id === step.id ? step : s)),
+      hasUnsavedChanges: true,
     }));
   },
 
@@ -302,7 +395,7 @@ export const useStore = create<AppState>((set, get) => ({
       s.stepNumber = idx + 1;
     });
     const nextActive = activeStepId === id ? (remaining[0]?.id ?? null) : activeStepId;
-    set({ steps: remaining, activeStepId: nextActive, selectedShapeId: null });
+    set({ steps: remaining, activeStepId: nextActive, selectedShapeId: null, hasUnsavedChanges: true });
   },
 
   reorderSteps: async (startIndex, endIndex) => {
@@ -318,7 +411,7 @@ export const useStore = create<AppState>((set, get) => ({
     reordered.forEach((s, i) => {
       s.stepNumber = i + 1;
     });
-    set({ steps: reordered });
+    set({ steps: reordered, hasUnsavedChanges: true });
     await api.saveStepsBatch(activeProject.id, reordered);
   },
 
@@ -360,7 +453,7 @@ export const useStore = create<AppState>((set, get) => ({
     await api.saveStep(mergedStep);
     await api.deleteStep(activeProject.id, step2Id);
     await get().loadSteps(activeProject.id);
-    set({ activeStepId: mergedStep.id });
+    set({ activeStepId: mergedStep.id, hasUnsavedChanges: true });
   },
 
   addManualStep: async () => {
@@ -373,7 +466,7 @@ export const useStore = create<AppState>((set, get) => ({
     const step = await api.manualSnapshot(activeProject.id);
     await get().loadSteps(activeProject.id);
     if (step) {
-      set({ activeStepId: step.id });
+      set({ activeStepId: step.id, hasUnsavedChanges: true });
     }
     return step;
   },
@@ -408,7 +501,7 @@ export const useStore = create<AppState>((set, get) => ({
     };
     await api.saveStep(newStep);
     await get().loadSteps(activeProject.id);
-    set({ activeStepId: newStep.id });
+    set({ activeStepId: newStep.id, hasUnsavedChanges: true });
     return newStep;
   },
 
@@ -508,7 +601,7 @@ export const useStore = create<AppState>((set, get) => ({
     });
 
     await api.saveStepsBatch(activeProject.id, updatedSteps);
-    set({ steps: updatedSteps });
+    set({ steps: updatedSteps, hasUnsavedChanges: true });
 
     if (projectTitle && projectTitle.trim()) {
       const updatedProj = { ...activeProject, title: projectTitle.trim() };
