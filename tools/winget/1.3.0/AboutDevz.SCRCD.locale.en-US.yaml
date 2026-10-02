@@ -11,7 +11,7 @@ PackageName: SCRCD
 PackageUrl: https://github.com/aboutdevz/scrcd
 License: MIT
 LicenseUrl: https://github.com/aboutdevz/scrcd/blob/main/LICENSE
-Copyright: Copyright (c) 2026 SCRCD
+Copyright: Copyright (c) 2026 Fikri Husen Badjeber
 ShortDescription: Automated Step-by-Step SOP & Guide Creator for Windows
 Description: A local, offline desktop application for Windows that automatically records workflows across any desktop or web application, capturing annotated screenshots and exporting comprehensive guides into PDF, Word (DOCX), PowerPoint (PPTX), and HTML.
 Moniker: scrcd
