@@ -59,6 +59,9 @@
     "typescript": "^5.7.3",
     "vite": "^6.2.0"
   },
+  "overrides": {
+    "image-size": "^2.0.4"
+  },
   "build": {
     "appId": "com.scrcd.app",
     "productName": "SCRCD",
