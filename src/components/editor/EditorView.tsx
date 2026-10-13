@@ -707,6 +707,7 @@ export const EditorView: React.FC = () => {
                 <option value="click">CLICK</option>
                 <option value="double_click">DOUBLE CLICK</option>
                 <option value="right_click">RIGHT CLICK</option>
+                <option value="type">TYPE</option>
                 <option value="navigation">NAVIGATION</option>
                 <option value="keypress">KEYPRESS</option>
                 <option value="snapshot">SNAPSHOT</option>

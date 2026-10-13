@@ -1,4 +1,4 @@
-export type ActionType = 'click' | 'double_click' | 'right_click' | 'navigation' | 'keypress' | 'snapshot';
+export type ActionType = 'click' | 'double_click' | 'right_click' | 'navigation' | 'keypress' | 'type' | 'snapshot';
 
 export type CategoryType = 'SOP' | 'Tutorial' | 'Troubleshooting' | 'Onboarding' | 'General' | (string & {});
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { generateMockScreenshot } from '@/services/mockData';
 import { Step } from '@/types';
-import { X, Workflow, MousePointer, ShieldCheck, FileCode, Terminal, GitBranch, Play } from 'lucide-react';
+import { X, Workflow, MousePointer, ShieldCheck, FileCode, Terminal, GitBranch, Play, Keyboard } from 'lucide-react';
 
 interface SimulatedCaptureModalProps {
   isOpen: boolean;
@@ -15,6 +15,66 @@ export const SimulatedCaptureModal: React.FC<SimulatedCaptureModalProps> = ({ is
   const [lastAction, setLastAction] = useState<string | null>(null);
 
   if (!isOpen || !activeProject) return null;
+
+  const handleSimulatedType = async (
+    elementName: string,
+    typedText: string,
+    appName: string,
+    relX: number,
+    relY: number
+  ) => {
+    const screenshot = generateMockScreenshot(
+      `${appName} - Active Window`,
+      1280,
+      720,
+      relX,
+      relY,
+      selectedApp
+    );
+
+    const now = Date.now();
+    const nextStepNum = steps.length + 1;
+    const isPassword = elementName.toLowerCase().includes('password');
+    const actionTitle = isPassword ? `Type password in '${elementName}'` : `Type "${typedText}" in '${elementName}'`;
+
+    const newStep: Step = {
+      id: `step_${now}`,
+      projectId: activeProject.id,
+      stepNumber: nextStepNum,
+      title: actionTitle,
+      richInstructions: isPassword
+        ? `<p>In ${appName}, enter your password into the <strong>${elementName}</strong> field to proceed.</p>`
+        : `<p>In ${appName}, type <strong>${typedText}</strong> into the <strong>${elementName}</strong> field to proceed.</p>`,
+      actionType: 'type',
+      screenshotPath: screenshot,
+      originalWidth: 1280,
+      originalHeight: 720,
+      clickX: relX,
+      clickY: relY,
+      uiaName: elementName,
+      uiaControlType: 'Edit',
+      uiaAppName: appName,
+      annotations: [
+        {
+          id: `h_${now}`,
+          type: 'hotspot',
+          x: relX,
+          y: relY,
+          number: nextStepNum,
+          color: '#2563eb',
+        },
+      ],
+      isPassword,
+      createdAt: now,
+    };
+
+    await updateStep(newStep);
+    await loadSteps(activeProject.id);
+    selectStep(newStep.id);
+
+    setLastAction(`Captured: ${actionTitle}`);
+    setTimeout(() => setLastAction(null), 2000);
+  };
 
   const handleSimulatedClick = async (
     elementName: string,
@@ -135,7 +195,19 @@ export const SimulatedCaptureModal: React.FC<SimulatedCaptureModalProps> = ({ is
 
                 <div className="space-y-3 pt-2">
                   <div>
-                    <label className="text-[11px] text-slate-400">Username</label>
+                    <div className="flex items-center justify-between pb-1">
+                      <label className="text-[11px] text-slate-400">Username</label>
+                      <button
+                        onClick={() =>
+                          handleSimulatedType('Username', 'admin@company.com', 'Google Chrome', 200, 180)
+                        }
+                        className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium cursor-pointer"
+                        title="Simulate Typing into Username"
+                      >
+                        <Keyboard className="w-3 h-3" />
+                        Type text
+                      </button>
+                    </div>
                     <div
                       onClick={() =>
                         handleSimulatedClick('Username', 'Input Field', 'Google Chrome', 200, 180)
@@ -148,7 +220,19 @@ export const SimulatedCaptureModal: React.FC<SimulatedCaptureModalProps> = ({ is
                   </div>
 
                   <div>
-                    <label className="text-[11px] text-slate-400">Password</label>
+                    <div className="flex items-center justify-between pb-1">
+                      <label className="text-[11px] text-slate-400">Password</label>
+                      <button
+                        onClick={() =>
+                          handleSimulatedType('Password', 'supersecret123', 'Google Chrome', 200, 240)
+                        }
+                        className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-medium cursor-pointer"
+                        title="Simulate Typing Password"
+                      >
+                        <Keyboard className="w-3 h-3" />
+                        Type password
+                      </button>
+                    </div>
                     <div
                       onClick={() =>
                         handleSimulatedClick('Password', 'Input Field', 'Google Chrome', 200, 240)

@@ -171,6 +171,7 @@ function createPillWindow() {
 function stopRecordingSession() {
   isRecording = false;
   isRecordingPaused = false;
+  cancelTypingSession();
   unregisterRecordingShortcuts();
   if (hookProcess) {
     try {
@@ -199,10 +200,122 @@ function extractCleanAppTitle(rawTitle, procName) {
   return rawTitle.slice(0, 35).trim();
 }
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 let currentCaptureConfig = { scope: 'window', hotspotVariant: 'spotlight' };
 let startingStepOffset = 0;
 let lastClickState = { x: 0, y: 0, time: 0, windowTitle: '' };
 let lastForegroundTitle = '';
+
+let typingSession = {
+  active: false,
+  text: '',
+  timer: null,
+  targetX: 0,
+  targetY: 0,
+  associatedStepId: null,
+};
+
+function cancelTypingSession() {
+  if (typingSession.timer) {
+    clearTimeout(typingSession.timer);
+    typingSession.timer = null;
+  }
+  typingSession.active = false;
+  typingSession.text = '';
+  typingSession.associatedStepId = null;
+}
+
+async function commitTypingSession(options = {}) {
+  if (typingSession.timer) {
+    clearTimeout(typingSession.timer);
+    typingSession.timer = null;
+  }
+  if (!typingSession.active || !typingSession.text.trim()) {
+    cancelTypingSession();
+    return;
+  }
+
+  const typedText = typingSession.text.trim();
+  const associatedId = typingSession.associatedStepId;
+  const targetX = typingSession.targetX;
+  const targetY = typingSession.targetY;
+  const pressedEnter = !!options.pressedEnter;
+  const pressedTab = !!options.pressedTab;
+
+  cancelTypingSession();
+
+  const associatedStep = associatedId ? recordedSteps.find((s) => s.id === associatedId) : null;
+  if (associatedStep && associatedStep.actionType === 'click') {
+    associatedStep.actionType = 'type';
+    const cleanApp = associatedStep.uiaAppName || 'Application';
+    const targetLabel = associatedStep.uiaName || 'input field';
+    const isPassword = associatedStep.isPassword ||
+      (associatedStep.uiaName && (associatedStep.uiaName.toLowerCase().includes('password') || associatedStep.uiaName.toLowerCase().includes('passcode') || associatedStep.uiaName.toLowerCase().includes('pin')));
+    associatedStep.isPassword = isPassword;
+
+    if (isPassword) {
+      associatedStep.title = associatedStep.uiaName ? `Type password in "${associatedStep.uiaName}"` : 'Type password';
+      associatedStep.richInstructions = `<p>Type your password into the <strong>${targetLabel}</strong> field in <em>${cleanApp}</em>.</p>`;
+    } else if (pressedEnter) {
+      associatedStep.title = associatedStep.uiaName ? `Type "${typedText}" in "${associatedStep.uiaName}" and press Enter` : `Type "${typedText}" and press Enter`;
+      associatedStep.richInstructions = `<p>Type <strong>${escapeHtml(typedText)}</strong> into the <strong>${targetLabel}</strong> in <em>${cleanApp}</em> and press <strong>Enter</strong> to submit.</p>`;
+    } else {
+      associatedStep.title = associatedStep.uiaName ? `Type "${typedText}" in "${associatedStep.uiaName}"` : `Type "${typedText}"`;
+      associatedStep.richInstructions = `<p>Type <strong>${escapeHtml(typedText)}</strong> into the <strong>${targetLabel}</strong> in <em>${cleanApp}</em> to proceed.</p>`;
+    }
+
+    try {
+      const now = Date.now();
+      const screenshotsDir = path.join(app.getPath('userData'), 'screenshots');
+      const shotFile = path.join(screenshotsDir, `shot_${now}.png`);
+      const exePath = getBinaryPath('capture.exe');
+      const captureMode = currentCaptureConfig.scope || 'window';
+      const captureArgs = [shotFile, captureMode, targetX.toString(), targetY.toString()];
+      if (currentCaptureConfig.monitorBounds) {
+        const b = currentCaptureConfig.monitorBounds;
+        captureArgs.push(b.x.toString(), b.y.toString(), b.width.toString(), b.height.toString());
+      }
+
+      let reCapSuccess = false;
+      if (fs.existsSync(exePath)) {
+        await new Promise((resolve) => {
+          execFile(exePath, captureArgs, { timeout: 3500 }, (err) => {
+            if (!err && fs.existsSync(shotFile)) {
+              reCapSuccess = true;
+            }
+            resolve();
+          });
+        });
+      }
+      if (!reCapSuccess) {
+        const fb = await captureWithDesktopCapturer(shotFile, targetX, targetY, currentCaptureConfig);
+        if (fb && fs.existsSync(shotFile)) {
+          reCapSuccess = true;
+        }
+      }
+      if (reCapSuccess && fs.existsSync(shotFile)) {
+        associatedStep.screenshotPath = 'file:///' + shotFile.replace(/\\/g, '/');
+      }
+    } catch (e) {
+      console.warn('Failed to refresh screenshot after typing:', e);
+    }
+  } else {
+    await captureStep(targetX, targetY, false, null, null, 'type', {
+      text: typedText,
+      pressedEnter,
+      pressedTab,
+    });
+  }
+}
 
 async function captureWithDesktopCapturer(outputPath, clickX, clickY, config) {
   try {
@@ -287,7 +400,7 @@ async function captureWithDesktopCapturer(outputPath, clickX, clickY, config) {
   }
 }
 
-async function captureStep(clickX, clickY, isSingleShot = false, overrideProjectId = null, overrideStepNumber = null, explicitAction = null) {
+async function captureStep(clickX, clickY, isSingleShot = false, overrideProjectId = null, overrideStepNumber = null, explicitAction = null, extraContext = null) {
   if (isBusyCapturing) return null;
   if (!isSingleShot && (isRecordingPaused || !isRecording)) return null;
 
@@ -371,6 +484,8 @@ async function captureStep(clickX, clickY, isSingleShot = false, overrideProject
       const cleanApp = extractCleanAppTitle(rawApp, capResult.processName);
       const elemName = (capResult.elementTitle || '').trim();
       const ctrlType = (capResult.controlType || '').trim();
+      const isPassword = capResult.isPassword === true ||
+        (elemName && (elemName.toLowerCase().includes('password') || elemName.toLowerCase().includes('passcode') || elemName.toLowerCase().includes('pin')));
 
       const stepNumber = overrideStepNumber || (startingStepOffset + recordedSteps.length + 1);
       const isSpotlight = (currentCaptureConfig.hotspotVariant || 'spotlight') === 'spotlight';
@@ -385,6 +500,19 @@ async function captureStep(clickX, clickY, isSingleShot = false, overrideProject
       } else if (stepAction === 'keypress') {
         stepTitle = `Submit / Navigate in ${cleanApp}`;
         stepInstructions = `<p>Press <strong>Enter</strong> to submit or navigate in <em>${cleanApp}</em>.</p>`;
+      } else if (stepAction === 'type') {
+        const typedText = (extraContext && extraContext.text) ? extraContext.text.trim() : '';
+        const targetLabel = elemName || 'input field';
+        if (isPassword) {
+          stepTitle = elemName ? `Type password in "${elemName}"` : 'Type password';
+          stepInstructions = `<p>Type your password into the <strong>${targetLabel}</strong> field in <em>${cleanApp}</em>.</p>`;
+        } else if (extraContext && extraContext.pressedEnter) {
+          stepTitle = elemName ? `Type "${typedText}" in "${elemName}" and press Enter` : `Type "${typedText}" and press Enter`;
+          stepInstructions = `<p>Type <strong>${escapeHtml(typedText)}</strong> into the <strong>${targetLabel}</strong> in <em>${cleanApp}</em> and press <strong>Enter</strong> to submit.</p>`;
+        } else {
+          stepTitle = elemName ? `Type "${typedText}" in "${elemName}"` : `Type "${typedText}"`;
+          stepInstructions = `<p>Type <strong>${escapeHtml(typedText)}</strong> into the <strong>${targetLabel}</strong> in <em>${cleanApp}</em> to proceed.</p>`;
+        }
       } else if (stepAction === 'snapshot') {
         stepTitle = elemName ? `View ${elemName} in ${cleanApp}` : `Snapshot in ${cleanApp}`;
         stepInstructions = `<p>Review <strong>${elemName || cleanApp}</strong> on screen.</p>`;
@@ -431,7 +559,7 @@ async function captureStep(clickX, clickY, isSingleShot = false, overrideProject
                 radius: 34,
               },
             ],
-        isPassword: false,
+        isPassword: isPassword,
         createdAt: now,
       };
 
@@ -517,7 +645,7 @@ function startGlobalHook() {
     });
 
     let buffer = '';
-    hookProcess.stdout.on('data', (chunk) => {
+    hookProcess.stdout.on('data', async (chunk) => {
       buffer += chunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop(); // keep last incomplete line
@@ -527,7 +655,70 @@ function startGlobalHook() {
         if (!trimmed) continue;
         try {
           const evt = JSON.parse(trimmed);
-          if (evt.type === 'click') {
+
+          if (evt.type === 'char' && evt.char) {
+            if (!typingSession.active) {
+              typingSession.active = true;
+              typingSession.text = evt.char;
+              typingSession.targetX = evt.x || 0;
+              typingSession.targetY = evt.y || 0;
+
+              const lastStep = recordedSteps.length > 0 ? recordedSteps[recordedSteps.length - 1] : null;
+              if (lastStep && lastStep.actionType === 'click') {
+                const ctrl = (lastStep.uiaControlType || '').toLowerCase();
+                const name = (lastStep.uiaName || '').toLowerCase();
+                const isInput = ['edit', 'document', 'combobox', 'search', 'text', 'input', 'pane', 'custom'].some((k) => ctrl.includes(k) || name.includes(k));
+                const isRecent = (Date.now() - lastStep.createdAt < 6000);
+                if (isInput && isRecent) {
+                  typingSession.associatedStepId = lastStep.id;
+                  if (lastStep.clickX || lastStep.clickY) {
+                    typingSession.targetX = evt.x || lastStep.clickX;
+                    typingSession.targetY = evt.y || lastStep.clickY;
+                  }
+                }
+              }
+            } else {
+              typingSession.text += evt.char;
+              if (evt.x && evt.y) {
+                typingSession.targetX = evt.x;
+                typingSession.targetY = evt.y;
+              }
+            }
+
+            if (typingSession.timer) clearTimeout(typingSession.timer);
+            typingSession.timer = setTimeout(() => {
+              commitTypingSession();
+            }, 1200);
+          } else if (evt.type === 'keypress' && evt.key === 'Backspace') {
+            if (typingSession.active && typingSession.text.length > 0) {
+              typingSession.text = typingSession.text.slice(0, -1);
+              if (typingSession.timer) clearTimeout(typingSession.timer);
+              typingSession.timer = setTimeout(() => {
+                commitTypingSession();
+              }, 1200);
+            }
+          } else if (evt.type === 'keypress' && evt.key === 'Escape') {
+            if (typingSession.active) {
+              cancelTypingSession();
+            }
+          } else if (evt.type === 'keypress' && evt.key === 'Enter') {
+            if (typingSession.active && typingSession.text.trim().length > 0) {
+              await commitTypingSession({ pressedEnter: true });
+            } else {
+              const now = Date.now();
+              if (now - lastCaptureTime > 600) {
+                captureStep(evt.x || 0, evt.y || 0, false, null, null, 'keypress');
+              }
+            }
+          } else if (evt.type === 'keypress' && evt.key === 'Tab') {
+            if (typingSession.active && typingSession.text.trim().length > 0) {
+              await commitTypingSession({ pressedTab: true });
+            }
+          } else if (evt.type === 'click') {
+            if (typingSession.active && typingSession.text.trim().length > 0) {
+              await commitTypingSession();
+            }
+
             // Check if click was inside floating pill window bounds
             if (pillWindow && !pillWindow.isDestroyed()) {
               const bounds = pillWindow.getBounds();
@@ -567,12 +758,10 @@ function startGlobalHook() {
 
             lastClickState = { x: evt.x, y: evt.y, time: now, windowTitle: '' };
             captureStep(evt.x, evt.y);
-          } else if (evt.type === 'keypress' && evt.key === 'Enter') {
-            const now = Date.now();
-            if (now - lastCaptureTime > 600) {
-              captureStep(evt.x || 0, evt.y || 0, false, null, null, 'keypress');
-            }
           } else if (evt.type === 'window_focus' && evt.windowTitle) {
+            if (typingSession.active && typingSession.text.trim().length > 0) {
+              await commitTypingSession();
+            }
             const title = evt.windowTitle.trim();
             // Ignore SCRCD own windows, task switcher, or immediate repeat
             if (
@@ -653,6 +842,9 @@ ipcMain.handle('start-recording', async (_event, { projectId, config }) => {
 });
 
 ipcMain.handle('pause-recording', async () => {
+  if (typingSession.active && typingSession.text.trim().length > 0) {
+    await commitTypingSession();
+  }
   isRecordingPaused = !isRecordingPaused;
   if (pillWindow && !pillWindow.isDestroyed()) {
     pillWindow.webContents.send('pill-pause-state', isRecordingPaused);
@@ -701,6 +893,9 @@ ipcMain.handle('manual-snapshot', async (_event, params = {}) => {
 });
 
 ipcMain.handle('finish-recording', async () => {
+  if (typingSession.active && typingSession.text.trim().length > 0) {
+    await commitTypingSession();
+  }
   const stepsToReturn = [...recordedSteps];
   const finishedProjectId = currentProjectId;
 

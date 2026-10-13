@@ -86,11 +86,12 @@ public class Program
     private const int SRCCOPY = 0x00CC0020;
     private const int CAPTUREBLT = 0x40000000;
 
-    private static void GetElementDetails(int x, int y, IntPtr fgHwnd, out string elementTitle, out string controlType, out string processName)
+    private static void GetElementDetails(ref int x, ref int y, IntPtr fgHwnd, out string elementTitle, out string controlType, out string processName, out bool isPassword)
     {
         elementTitle = "";
         controlType = "";
         processName = "";
+        isPassword = false;
 
         try
         {
@@ -109,7 +110,25 @@ public class Program
 
         try
         {
-            AutomationElement el = AutomationElement.FromPoint(new System.Windows.Point(x, y));
+            AutomationElement el = null;
+            if (x > 0 || y > 0)
+            {
+                try
+                {
+                    el = AutomationElement.FromPoint(new System.Windows.Point(x, y));
+                }
+                catch {}
+            }
+
+            if (el == null)
+            {
+                try
+                {
+                    el = AutomationElement.FocusedElement;
+                }
+                catch {}
+            }
+
             if (el != null)
             {
                 string name = el.Current.Name;
@@ -117,6 +136,27 @@ public class Program
                 if (!string.IsNullOrEmpty(ctrl) && ctrl.StartsWith("ControlType."))
                 {
                     ctrl = ctrl.Substring("ControlType.".Length);
+                }
+
+                try
+                {
+                    isPassword = el.Current.IsPassword;
+                }
+                catch {}
+
+                // If coordinates were 0, center on the focused element bounds
+                if (x == 0 && y == 0)
+                {
+                    try
+                    {
+                        System.Windows.Rect elRect = el.Current.BoundingRectangle;
+                        if (elRect != System.Windows.Rect.Empty && elRect.Width > 0 && elRect.Height > 0)
+                        {
+                            x = (int)(elRect.Left + elRect.Width / 2);
+                            y = (int)(elRect.Top + elRect.Height / 2);
+                        }
+                    }
+                    catch {}
                 }
 
                 // If name is empty, traverse up to 3 parent levels to find a labeled container
@@ -144,6 +184,15 @@ public class Program
         catch
         {
             // Fallback gracefully on timeout or permission
+        }
+
+        if (!isPassword && !string.IsNullOrEmpty(elementTitle))
+        {
+            string lower = elementTitle.ToLower();
+            if (lower.Contains("password") || lower.Contains("passcode") || lower.Contains("pin"))
+            {
+                isPassword = true;
+            }
         }
     }
 
@@ -232,7 +281,8 @@ public class Program
             string elementTitle = "";
             string controlType = "";
             string processName = "";
-            GetElementDetails(clickX, clickY, fgHwnd, out elementTitle, out controlType, out processName);
+            bool isPassword = false;
+            GetElementDetails(ref clickX, ref clickY, fgHwnd, out elementTitle, out controlType, out processName, out isPassword);
 
             // 3. Determine Monitor Bounds for the Click
             POINT pt = new POINT { x = clickX, y = clickY };
@@ -340,8 +390,8 @@ public class Program
             string escapedProc = EscapeJson(processName);
             string escapedPath = EscapeJson(outputPath.Replace("\\", "/"));
 
-            Console.WriteLine(string.Format("{{\"success\":true,\"width\":{0},\"height\":{1},\"left\":{2},\"top\":{3},\"windowTitle\":\"{4}\",\"elementTitle\":\"{5}\",\"controlType\":\"{6}\",\"processName\":\"{7}\",\"path\":\"{8}\"}}",
-                cropW, cropH, cropX, cropY, escapedTitle, escapedElement, escapedCtrl, escapedProc, escapedPath));
+            Console.WriteLine(string.Format("{{\"success\":true,\"width\":{0},\"height\":{1},\"left\":{2},\"top\":{3},\"windowTitle\":\"{4}\",\"elementTitle\":\"{5}\",\"controlType\":\"{6}\",\"processName\":\"{7}\",\"isPassword\":{8},\"path\":\"{9}\"}}",
+                cropW, cropH, cropX, cropY, escapedTitle, escapedElement, escapedCtrl, escapedProc, isPassword ? "true" : "false", escapedPath));
 
             return 0;
         }

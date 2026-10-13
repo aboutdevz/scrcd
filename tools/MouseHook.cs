@@ -8,18 +8,23 @@ using System.Runtime.InteropServices;
 public class Program
 {
     private const int WH_MOUSE_LL = 14;
+    private const int WH_KEYBOARD_LL = 13;
     private const int WM_LBUTTONDOWN = 0x0201;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int WM_SYSKEYDOWN = 0x0104;
 
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     private const uint WINEVENT_OUTOFCONTEXT = 0;
 
-    private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+    private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
     private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 
-    private static LowLevelMouseProc _mouseProc = MouseHookCallback;
+    private static HookProc _mouseProc = MouseHookCallback;
+    private static HookProc _keyboardProc = KeyboardHookCallback;
     private static WinEventDelegate _winEventProc = WinEventCallback;
 
     private static IntPtr _mouseHookID = IntPtr.Zero;
+    private static IntPtr _keyboardHookID = IntPtr.Zero;
     private static IntPtr _winEventHookID = IntPtr.Zero;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -35,8 +40,18 @@ public class Program
         public IntPtr dwExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KBDLLHOOKSTRUCT
+    {
+        public uint vkCode;
+        public uint scanCode;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+    private static extern IntPtr SetWindowsHookEx(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
 
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -44,6 +59,22 @@ public class Program
 
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    private static extern short GetKeyState(int nVirtKey);
+
+    [DllImport("user32.dll")]
+    private static extern int ToUnicode(
+        uint wVirtKey,
+        uint wScanCode,
+        byte[] lpKeyState,
+        [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pwszBuff,
+        int cchBuff,
+        uint wFlags
+    );
 
     [DllImport("user32.dll")]
     private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
@@ -129,6 +160,7 @@ public class Program
         {
             IntPtr moduleHandle = GetModuleHandle(curModule.ModuleName);
             _mouseHookID = SetWindowsHookEx(WH_MOUSE_LL, _mouseProc, moduleHandle, 0);
+            _keyboardHookID = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardProc, moduleHandle, 0);
         }
 
         _winEventHookID = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _winEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
@@ -142,6 +174,7 @@ public class Program
         }
 
         if (_mouseHookID != IntPtr.Zero) UnhookWindowsHookEx(_mouseHookID);
+        if (_keyboardHookID != IntPtr.Zero) UnhookWindowsHookEx(_keyboardHookID);
         if (_winEventHookID != IntPtr.Zero) UnhookWinEvent(_winEventHookID);
     }
 
@@ -154,6 +187,69 @@ public class Program
             Console.Out.Flush();
         }
         return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
+    }
+
+    private static IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN))
+        {
+            KBDLLHOOKSTRUCT kbd = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+            POINT pt;
+            GetCursorPos(out pt);
+
+            if (kbd.vkCode == 0x0D) // Enter
+            {
+                Console.WriteLine(string.Format("{{\"type\":\"keypress\",\"key\":\"Enter\",\"x\":{0},\"y\":{1}}}", pt.x, pt.y));
+                Console.Out.Flush();
+            }
+            else if (kbd.vkCode == 0x09) // Tab
+            {
+                Console.WriteLine(string.Format("{{\"type\":\"keypress\",\"key\":\"Tab\",\"x\":{0},\"y\":{1}}}", pt.x, pt.y));
+                Console.Out.Flush();
+            }
+            else if (kbd.vkCode == 0x08) // Backspace
+            {
+                Console.WriteLine(string.Format("{{\"type\":\"keypress\",\"key\":\"Backspace\",\"x\":{0},\"y\":{1}}}", pt.x, pt.y));
+                Console.Out.Flush();
+            }
+            else if (kbd.vkCode == 0x1B) // Escape
+            {
+                Console.WriteLine(string.Format("{{\"type\":\"keypress\",\"key\":\"Escape\",\"x\":{0},\"y\":{1}}}", pt.x, pt.y));
+                Console.Out.Flush();
+            }
+            else
+            {
+                bool ctrl = (GetKeyState(0x11) & 0x80) != 0;
+                bool alt = (GetKeyState(0x12) & 0x80) != 0;
+                bool isAltGr = ctrl && alt;
+
+                if ((!ctrl && !alt) || isAltGr)
+                {
+                    byte[] keyState = new byte[256];
+                    if ((GetKeyState(0x10) & 0x80) != 0) keyState[0x10] = 0x80; // Shift
+                    if ((GetKeyState(0x14) & 0x01) != 0) keyState[0x14] = 0x01; // Caps Lock
+                    if (isAltGr)
+                    {
+                        keyState[0x11] = 0x80;
+                        keyState[0x12] = 0x80;
+                    }
+
+                    StringBuilder sb = new StringBuilder(8);
+                    int len = ToUnicode(kbd.vkCode, kbd.scanCode, keyState, sb, sb.Capacity, 0);
+                    if (len > 0)
+                    {
+                        string text = sb.ToString();
+                        if (text.Length > 0 && text[0] >= 32)
+                        {
+                            string escaped = EscapeJson(text);
+                            Console.WriteLine(string.Format("{{\"type\":\"char\",\"char\":\"{0}\",\"vkCode\":{1},\"x\":{2},\"y\":{3}}}", escaped, kbd.vkCode, pt.x, pt.y));
+                            Console.Out.Flush();
+                        }
+                    }
+                }
+            }
+        }
+        return CallNextHookEx(_keyboardHookID, nCode, wParam, lParam);
     }
 
     private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)

@@ -26,6 +26,7 @@ const ACTION_CYCLE: ActionType[] = [
   'click',
   'double_click',
   'right_click',
+  'type',
   'navigation',
   'keypress',
   'snapshot',
