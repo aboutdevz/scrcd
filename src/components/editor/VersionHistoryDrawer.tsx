@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { GuideVersion, Step } from '@/types';
 import { ConfirmModal } from '@/components/common/ConfirmModal';
+import { formatCalloutHtml } from '@/services/richText';
 import {
   History,
   X,
@@ -170,8 +171,8 @@ export const VersionHistoryDrawer: React.FC<VersionHistoryDrawerProps> = ({
 
                         {step.richInstructions && (
                           <div
-                            className="text-muted-foreground text-[11px] prose-xs [&_p]:text-muted-foreground [&_strong]:text-foreground"
-                            dangerouslySetInnerHTML={{ __html: step.richInstructions }}
+                            className="text-muted-foreground text-[11px] rich-text-content"
+                            dangerouslySetInnerHTML={{ __html: formatCalloutHtml(step.richInstructions) }}
                           />
                         )}
                       </div>

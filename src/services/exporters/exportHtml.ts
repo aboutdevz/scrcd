@@ -1,4 +1,5 @@
 import { Project, Step, BrandingProfile } from '@/types';
+import { formatCalloutHtml } from '@/services/richText';
 
 export function generateHtml(
   project: Project,
@@ -109,7 +110,7 @@ export function generateHtml(
       </div>
       <div class="step-body">
         <div class="step-instructions">
-          ${step.richInstructions || `<p>${escapeHtml(step.title)}</p>`}
+          ${formatCalloutHtml(step.richInstructions) || `<p>${escapeHtml(step.title)}</p>`}
         </div>
         ${
           step.screenshotPath
@@ -391,9 +392,82 @@ export function generateHtml(
       color: var(--text);
       margin-bottom: 16px;
       padding-left: 4px;
+      line-height: 1.6;
+    }
+    .step-instructions h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin: 12px 0 6px;
+      color: var(--text);
+    }
+    .step-instructions h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin: 12px 0 6px;
+      color: var(--text);
+    }
+    .step-instructions h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin: 10px 0 4px;
+      color: var(--text);
     }
     .step-instructions p {
       margin-bottom: 8px;
+    }
+    .step-instructions ul {
+      list-style-type: disc !important;
+      padding-left: 22px !important;
+      margin: 6px 0 10px 0 !important;
+    }
+    .step-instructions ol {
+      list-style-type: decimal !important;
+      padding-left: 22px !important;
+      margin: 6px 0 10px 0 !important;
+    }
+    .step-instructions li {
+      margin: 3px 0 !important;
+    }
+    .step-instructions li > p {
+      margin: 0 !important;
+      display: inline !important;
+    }
+    .step-instructions blockquote {
+      border-left: 3.5px solid var(--accent);
+      background: rgba(148, 163, 184, 0.1);
+      padding: 8px 12px;
+      margin: 8px 0;
+      border-radius: 0 6px 6px 0;
+    }
+    .step-instructions blockquote.callout-tip {
+      border-left-color: #10b981;
+      background: rgba(16, 185, 129, 0.08);
+    }
+    .step-instructions blockquote.callout-tip strong {
+      color: #10b981;
+    }
+    .step-instructions blockquote.callout-warning {
+      border-left-color: #f59e0b;
+      background: rgba(245, 158, 11, 0.08);
+    }
+    .step-instructions blockquote.callout-warning strong {
+      color: #f59e0b;
+    }
+    .step-instructions blockquote.callout-note {
+      border-left-color: #3b82f6;
+      background: rgba(59, 130, 246, 0.08);
+    }
+    .step-instructions blockquote.callout-note strong {
+      color: #3b82f6;
+    }
+    body.light .step-instructions blockquote.callout-tip strong {
+      color: #047857;
+    }
+    body.light .step-instructions blockquote.callout-warning strong {
+      color: #b45309;
+    }
+    body.light .step-instructions blockquote.callout-note strong {
+      color: #1d4ed8;
     }
     .step-instructions code {
       background: rgba(148, 163, 184, 0.2);

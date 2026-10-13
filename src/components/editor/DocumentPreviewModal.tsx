@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { Step, ActionType } from '@/types';
 import { bakeStepsForExport } from '@/services/imageBaker';
+import { formatCalloutHtml } from '@/services/richText';
 import {
   FileText,
   Printer,
@@ -501,13 +502,11 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
                   {/* Step Instructions */}
                   <div
-                    className={`text-sm leading-relaxed pl-1 ${
-                      previewTheme === 'dark'
-                        ? 'text-slate-200 [&_p]:text-slate-200 [&_strong]:text-white [&_strong]:font-semibold [&_em]:text-slate-300 [&_code]:text-amber-300 [&_code]:bg-slate-800 [&_a]:text-blue-400'
-                        : 'text-slate-800 [&_p]:text-slate-800 [&_strong]:text-slate-900 [&_strong]:font-semibold [&_em]:text-slate-700 [&_code]:text-blue-700 [&_code]:bg-slate-100 [&_a]:text-blue-600'
+                    className={`text-sm leading-relaxed pl-1 rich-text-content ${
+                      previewTheme === 'dark' ? 'dark-mode' : 'light-mode'
                     }`}
                     dangerouslySetInnerHTML={{
-                      __html: step.richInstructions || `<p>${step.title}</p>`,
+                      __html: formatCalloutHtml(step.richInstructions || `<p>${step.title}</p>`),
                     }}
                   />
 

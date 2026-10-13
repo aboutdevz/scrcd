@@ -80,3 +80,370 @@ body.pill-mode {
   background-color: transparent !important;
 }
 
+/* ==========================================================================
+   Rich Text & WYSIWYG Editor Styles
+   Supports Headings (h2, h3), Bullet/Numbered Lists, Blockquotes, Callouts,
+   Inline Code, and Links with strict contrast across Light and Dark modes.
+   ========================================================================== */
+
+.rich-text-content h1,
+.tiptap h1 {
+  font-size: 1.25rem !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+  margin-top: 0.85rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+.rich-text-content h2,
+.tiptap h2 {
+  font-size: 1.1rem !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+.rich-text-content h3,
+.tiptap h3 {
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+  margin-top: 0.6rem !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.rich-text-content h4,
+.tiptap h4 {
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.rich-text-content p,
+.tiptap p {
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+}
+
+.rich-text-content p:last-child,
+.tiptap p:last-child {
+  margin-bottom: 0;
+}
+
+/* Unordered & Ordered Lists */
+.rich-text-content ul,
+.tiptap ul {
+  list-style-type: disc !important;
+  padding-left: 1.35rem !important;
+  margin-top: 0.35rem !important;
+  margin-bottom: 0.5rem !important;
+  display: block !important;
+}
+
+.rich-text-content ol,
+.tiptap ol {
+  list-style-type: decimal !important;
+  padding-left: 1.35rem !important;
+  margin-top: 0.35rem !important;
+  margin-bottom: 0.5rem !important;
+  display: block !important;
+}
+
+.rich-text-content li,
+.tiptap li {
+  display: list-item !important;
+  margin-top: 0.15rem !important;
+  margin-bottom: 0.15rem !important;
+  line-height: 1.55 !important;
+}
+
+.rich-text-content li > p,
+.tiptap li > p {
+  margin: 0 !important;
+  display: inline !important;
+}
+
+/* Blockquotes & Quotes */
+.rich-text-content blockquote,
+.tiptap blockquote {
+  border-left: 3.5px solid hsl(var(--primary) / 0.6) !important;
+  background-color: hsl(var(--secondary) / 0.5) !important;
+  padding: 0.45rem 0.75rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+  border-radius: 0 0.375rem 0.375rem 0 !important;
+}
+
+.rich-text-content blockquote p,
+.tiptap blockquote p {
+  margin-bottom: 0 !important;
+}
+
+/* Callout Variants */
+.rich-text-content blockquote.callout-tip,
+.tiptap blockquote.callout-tip {
+  border-left-color: #10b981 !important;
+  background-color: rgba(16, 185, 129, 0.08) !important;
+}
+
+.rich-text-content blockquote.callout-warning,
+.tiptap blockquote.callout-warning {
+  border-left-color: #f59e0b !important;
+  background-color: rgba(245, 158, 11, 0.08) !important;
+}
+
+.rich-text-content blockquote.callout-note,
+.tiptap blockquote.callout-note {
+  border-left-color: #3b82f6 !important;
+  background-color: rgba(59, 130, 246, 0.08) !important;
+}
+
+/* Inline Code */
+.rich-text-content code,
+.tiptap code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace !important;
+  font-size: 0.85em !important;
+  padding: 0.1rem 0.35rem !important;
+  border-radius: 0.25rem !important;
+}
+
+/* Code Blocks */
+.rich-text-content pre,
+.tiptap pre {
+  padding: 0.5rem 0.75rem !important;
+  border-radius: 0.375rem !important;
+  overflow-x: auto !important;
+  margin: 0.5rem 0 !important;
+}
+
+.rich-text-content pre code,
+.tiptap pre code {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* Strong & Italic */
+.rich-text-content strong,
+.rich-text-content b,
+.tiptap strong,
+.tiptap b {
+  font-weight: 700 !important;
+}
+
+.rich-text-content em,
+.rich-text-content i,
+.tiptap em,
+.tiptap i {
+  font-style: italic !important;
+}
+
+/* Links */
+.rich-text-content a,
+.tiptap a {
+  color: hsl(var(--primary)) !important;
+  text-decoration: underline !important;
+}
+
+/* Light Mode specific contrasts for rich text */
+:root:not(.dark) .rich-text-content,
+:root:not(.dark) .tiptap,
+.rich-text-content.light-mode {
+  color: #1e293b;
+}
+
+:root:not(.dark) .rich-text-content h1,
+:root:not(.dark) .rich-text-content h2,
+:root:not(.dark) .rich-text-content h3,
+:root:not(.dark) .rich-text-content h4,
+:root:not(.dark) .tiptap h1,
+:root:not(.dark) .tiptap h2,
+:root:not(.dark) .tiptap h3,
+:root:not(.dark) .tiptap h4,
+.rich-text-content.light-mode h1,
+.rich-text-content.light-mode h2,
+.rich-text-content.light-mode h3,
+.rich-text-content.light-mode h4 {
+  color: #0f172a !important;
+}
+
+:root:not(.dark) .rich-text-content p,
+:root:not(.dark) .tiptap p,
+.rich-text-content.light-mode p {
+  color: #334155;
+}
+
+:root:not(.dark) .rich-text-content strong,
+:root:not(.dark) .rich-text-content b,
+:root:not(.dark) .tiptap strong,
+:root:not(.dark) .tiptap b,
+.rich-text-content.light-mode strong,
+.rich-text-content.light-mode b {
+  color: #0f172a !important;
+}
+
+:root:not(.dark) .rich-text-content code,
+:root:not(.dark) .tiptap code,
+.rich-text-content.light-mode code {
+  background-color: #f1f5f9 !important;
+  color: #1e40af !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+:root:not(.dark) .rich-text-content pre,
+:root:not(.dark) .tiptap pre,
+.rich-text-content.light-mode pre {
+  background-color: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+:root:not(.dark) .rich-text-content blockquote,
+:root:not(.dark) .tiptap blockquote,
+.rich-text-content.light-mode blockquote {
+  color: #334155 !important;
+}
+
+:root:not(.dark) .rich-text-content blockquote.callout-tip,
+:root:not(.dark) .tiptap blockquote.callout-tip,
+.rich-text-content.light-mode blockquote.callout-tip {
+  color: #064e3b !important;
+}
+
+:root:not(.dark) .rich-text-content blockquote.callout-tip strong,
+:root:not(.dark) .tiptap blockquote.callout-tip strong,
+.rich-text-content.light-mode blockquote.callout-tip strong {
+  color: #047857 !important;
+}
+
+:root:not(.dark) .rich-text-content blockquote.callout-warning,
+:root:not(.dark) .tiptap blockquote.callout-warning,
+.rich-text-content.light-mode blockquote.callout-warning {
+  color: #78350f !important;
+}
+
+:root:not(.dark) .rich-text-content blockquote.callout-warning strong,
+:root:not(.dark) .tiptap blockquote.callout-warning strong,
+.rich-text-content.light-mode blockquote.callout-warning strong {
+  color: #b45309 !important;
+}
+
+:root:not(.dark) .rich-text-content blockquote.callout-note,
+:root:not(.dark) .tiptap blockquote.callout-note,
+.rich-text-content.light-mode blockquote.callout-note {
+  color: #1e3a8a !important;
+}
+
+:root:not(.dark) .rich-text-content blockquote.callout-note strong,
+:root:not(.dark) .tiptap blockquote.callout-note strong,
+.rich-text-content.light-mode blockquote.callout-note strong {
+  color: #1d4ed8 !important;
+}
+
+/* Dark Mode specific contrasts for rich text */
+.dark .rich-text-content,
+.dark .tiptap,
+.rich-text-content.dark-mode {
+  color: #e2e8f0;
+}
+
+.dark .rich-text-content h1,
+.dark .rich-text-content h2,
+.dark .rich-text-content h3,
+.dark .rich-text-content h4,
+.dark .tiptap h1,
+.dark .tiptap h2,
+.dark .tiptap h3,
+.dark .tiptap h4,
+.rich-text-content.dark-mode h1,
+.rich-text-content.dark-mode h2,
+.rich-text-content.dark-mode h3,
+.rich-text-content.dark-mode h4 {
+  color: #f8fafc !important;
+}
+
+.dark .rich-text-content p,
+.dark .tiptap p,
+.rich-text-content.dark-mode p {
+  color: #cbd5e1;
+}
+
+.dark .rich-text-content strong,
+.dark .rich-text-content b,
+.dark .tiptap strong,
+.dark .tiptap b,
+.rich-text-content.dark-mode strong,
+.rich-text-content.dark-mode b {
+  color: #ffffff !important;
+}
+
+.dark .rich-text-content code,
+.dark .tiptap code,
+.rich-text-content.dark-mode code {
+  background-color: #1e293b !important;
+  color: #fcd34d !important;
+  border: 1px solid #334155 !important;
+}
+
+.dark .rich-text-content pre,
+.dark .tiptap pre,
+.rich-text-content.dark-mode pre {
+  background-color: #0f172a !important;
+  border: 1px solid #1e293b !important;
+  color: #f1f5f9 !important;
+}
+
+.dark .rich-text-content blockquote,
+.dark .tiptap blockquote,
+.rich-text-content.dark-mode blockquote {
+  color: #e2e8f0 !important;
+}
+
+.dark .rich-text-content blockquote.callout-tip,
+.dark .tiptap blockquote.callout-tip,
+.rich-text-content.dark-mode blockquote.callout-tip {
+  color: #ecfdf5 !important;
+}
+
+.dark .rich-text-content blockquote.callout-tip strong,
+.dark .tiptap blockquote.callout-tip strong,
+.rich-text-content.dark-mode blockquote.callout-tip strong {
+  color: #34d399 !important;
+}
+
+.dark .rich-text-content blockquote.callout-warning,
+.dark .tiptap blockquote.callout-warning,
+.rich-text-content.dark-mode blockquote.callout-warning {
+  color: #fffbeb !important;
+}
+
+.dark .rich-text-content blockquote.callout-warning strong,
+.dark .tiptap blockquote.callout-warning strong,
+.rich-text-content.dark-mode blockquote.callout-warning strong {
+  color: #fbbf24 !important;
+}
+
+.dark .rich-text-content blockquote.callout-note,
+.dark .tiptap blockquote.callout-note,
+.rich-text-content.dark-mode blockquote.callout-note {
+  color: #eff6ff !important;
+}
+
+.dark .rich-text-content blockquote.callout-note strong,
+.dark .tiptap blockquote.callout-note strong,
+.rich-text-content.dark-mode blockquote.callout-note strong {
+  color: #60a5fa !important;
+}
+
+/* Tiptap Placeholder Styling */
+.tiptap p.is-editor-empty:first-child::before,
+.tiptap p.is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+}
+

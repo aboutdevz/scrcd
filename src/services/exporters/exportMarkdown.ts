@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { Project, Step, BrandingProfile } from '@/types';
+import { htmlToMarkdown } from '@/services/richText';
 
 async function urlToBlob(url: string): Promise<Blob> {
   if (url.startsWith('data:')) {
@@ -68,13 +69,9 @@ export function generateMarkdownText(
     md += `- **Application**: ${step.uiaAppName || 'Application'}\n`;
     md += `- **Action**: \`${step.actionType.toUpperCase()}\`\n\n`;
 
-    const plainInstructions = step.richInstructions
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (plainInstructions) {
-      md += `${plainInstructions}\n\n`;
+    const mdInstructions = htmlToMarkdown(step.richInstructions);
+    if (mdInstructions) {
+      md += `${mdInstructions}\n\n`;
     }
 
     if (step.screenshotPath) {

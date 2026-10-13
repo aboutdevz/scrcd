@@ -1,6 +1,7 @@
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun, PageBreak, AlignmentType } from 'docx';
 import { Folder, Project, Step, BrandingProfile } from '@/types';
 import { bakeStepsForExport } from '@/services/imageBaker';
+import { formatCalloutHtml } from '@/services/richText';
 import { api, isElectron, getElectron } from '@/services/api';
 
 export interface MasterBinderOptions {
@@ -156,7 +157,7 @@ export function generateMasterBinderHtml(
 
               ${
                 s.richInstructions
-                  ? `<div class="step-instructions">${s.richInstructions}</div>`
+                  ? `<div class="step-instructions">${formatCalloutHtml(s.richInstructions)}</div>`
                   : ''
               }
 
@@ -437,8 +438,82 @@ export function generateMasterBinderHtml(
       margin-bottom: 16px;
       line-height: 1.6;
     }
+    .step-instructions h1 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 12px 0 6px;
+    }
+    .step-instructions h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 10px 0 4px;
+    }
+    .step-instructions h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #1e293b;
+      margin: 8px 0 4px;
+    }
     .step-instructions p {
       margin-bottom: 8px;
+    }
+    .step-instructions ul {
+      list-style-type: disc !important;
+      padding-left: 20px !important;
+      margin: 6px 0 10px 0 !important;
+    }
+    .step-instructions ol {
+      list-style-type: decimal !important;
+      padding-left: 20px !important;
+      margin: 6px 0 10px 0 !important;
+    }
+    .step-instructions li {
+      margin: 3px 0 !important;
+    }
+    .step-instructions li > p {
+      margin: 0 !important;
+      display: inline !important;
+    }
+    .step-instructions blockquote {
+      border-left: 3.5px solid ${accent};
+      background: #f1f5f9;
+      padding: 8px 12px;
+      margin: 8px 0;
+      border-radius: 0 6px 6px 0;
+    }
+    .step-instructions blockquote.callout-tip {
+      border-left-color: #10b981;
+      background: rgba(16, 185, 129, 0.08);
+      color: #064e3b;
+    }
+    .step-instructions blockquote.callout-tip strong {
+      color: #047857;
+    }
+    .step-instructions blockquote.callout-warning {
+      border-left-color: #f59e0b;
+      background: rgba(245, 158, 11, 0.08);
+      color: #78350f;
+    }
+    .step-instructions blockquote.callout-warning strong {
+      color: #b45309;
+    }
+    .step-instructions blockquote.callout-note {
+      border-left-color: #3b82f6;
+      background: rgba(59, 130, 246, 0.08);
+      color: #1e3a8a;
+    }
+    .step-instructions blockquote.callout-note strong {
+      color: #1d4ed8;
+    }
+    .step-instructions code {
+      background: #f1f5f9;
+      color: #1e40af;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 13px;
     }
     .step-instructions strong {
       font-weight: 700;

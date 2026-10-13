@@ -15,26 +15,7 @@ function cleanXmlText(text: string | undefined | null): string {
     .trim();
 }
 
-/**
- * Converts rich HTML instructions into clean plain text for Word runs,
- * unescaping common HTML entities.
- */
-function htmlToPlainText(html: string | undefined | null): string {
-  if (!html) return '';
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-    .replace(/[ \t]+/g, ' ')
-    .trim();
-}
+import { htmlToPlainText } from '@/services/richText';
 
 /**
  * Safely converts an image URL (data URI, file URL, or http) into a clean,

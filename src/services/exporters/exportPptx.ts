@@ -1,5 +1,6 @@
 import pptxgen from 'pptxgenjs';
 import { Project, Step, BrandingProfile } from '@/types';
+import { htmlToPlainText } from '@/services/richText';
 
 export async function generatePptx(
   project: Project,
@@ -295,10 +296,7 @@ export async function generatePptx(
     });
 
     // Instruction Text inside Card
-    const plainText = step.richInstructions
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const plainText = htmlToPlainText(step.richInstructions);
 
     slide.addText(plainText || step.title, {
       x: 0.85,

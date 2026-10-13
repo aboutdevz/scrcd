@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import Blockquote from '@tiptap/extension-blockquote';
 import Placeholder from '@tiptap/extension-placeholder';
 import {
   Bold,
@@ -22,7 +23,32 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { rewriteStepInstructions } from '@/services/aiHarness';
+import { formatCalloutHtml } from '@/services/richText';
 import { Step } from '@/types';
+
+// Custom Blockquote that preserves and parses callout classes
+const CustomBlockquote = Blockquote.extend({
+  addAttributes() {
+    return {
+      class: {
+        default: null,
+        parseHTML: (element) => {
+          const cls = element.getAttribute('class');
+          if (cls) return cls;
+          const text = (element.textContent || '').toUpperCase();
+          if (text.includes('[TIP]') || text.includes('[!TIP]')) return 'callout-tip';
+          if (text.includes('[WARNING]') || text.includes('[!WARNING]')) return 'callout-warning';
+          if (text.includes('[NOTE]') || text.includes('[!NOTE]')) return 'callout-note';
+          return null;
+        },
+        renderHTML: (attributes) => {
+          if (!attributes.class) return {};
+          return { class: attributes.class };
+        },
+      },
+    };
+  },
+});
 
 interface WysiwygEditorProps {
   content: string;
@@ -54,10 +80,14 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [suggestedContent, setSuggestedContent] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const lastStepIdRef = useRef<string | undefined>(step?.id);
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        blockquote: false,
+      }),
+      CustomBlockquote,
       Placeholder.configure({
         placeholder: 'Add detailed instructions, tips, or expected outcomes for this step...',
       }),
@@ -69,27 +99,49 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
     editorProps: {
       attributes: {
         class:
-          'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] p-3 text-xs leading-relaxed',
+          'rich-text-content focus:outline-none min-h-[140px] p-3 text-xs leading-relaxed',
       },
     },
   });
 
-  // Keep editor content in sync when active step changes
+  // Keep editor content in sync when active step changes or updated externally
   useEffect(() => {
-    if (editor && editor.getHTML() !== content) {
+    if (!editor) return;
+    const isDifferentStep = lastStepIdRef.current !== step?.id;
+    lastStepIdRef.current = step?.id;
+
+    if (isDifferentStep) {
       editor.commands.setContent(content || '');
+      return;
     }
-  }, [content, editor]);
+
+    const currentHtml = editor.getHTML();
+    const normalizedProp = content || '';
+    if (currentHtml !== normalizedProp) {
+      if (!editor.isFocused || (currentHtml === '<p></p>' && normalizedProp !== '')) {
+        editor.commands.setContent(normalizedProp);
+      }
+    }
+  }, [content, step?.id, editor]);
 
   if (!editor) return null;
 
   const insertCallout = (type: 'tip' | 'warning' | 'note') => {
     const title = type.toUpperCase();
+    if (editor.isActive('blockquote')) {
+      editor.commands.updateAttributes('blockquote', { class: `callout-${type}` });
+      return;
+    }
+
+    const { from, to } = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(from, to, ' ').trim();
+    const innerText = selectedText ? selectedText : 'Insert guidance here...';
+
     editor
       .chain()
       .focus()
       .insertContent(
-        `<blockquote><p><strong>[${title}]:</strong> Insert guidance here...</p></blockquote>`
+        `<blockquote class="callout-${type}"><p><strong>[${title}]:</strong> ${innerText}</p></blockquote>`
       )
       .run();
   };
@@ -157,6 +209,7 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
       <div className="flex items-center flex-wrap gap-0.5 p-1 border-b border-border bg-secondary/30">
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleBold().run()}
           className={`p-1.5 rounded hover:bg-secondary transition-colors ${
             editor.isActive('bold') ? 'bg-secondary text-primary font-bold' : 'text-muted-foreground'
@@ -168,9 +221,10 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
 
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleItalic().run()}
           className={`p-1.5 rounded hover:bg-secondary transition-colors ${
-            editor.isActive('italic') ? 'bg-secondary text-primary' : 'text-muted-foreground'
+            editor.isActive('italic') ? 'bg-secondary text-primary font-bold' : 'text-muted-foreground'
           }`}
           title="Italic (Ctrl+I)"
         >
@@ -179,9 +233,10 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
 
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleCode().run()}
           className={`p-1.5 rounded hover:bg-secondary transition-colors ${
-            editor.isActive('code') ? 'bg-secondary text-primary' : 'text-muted-foreground'
+            editor.isActive('code') ? 'bg-secondary text-primary font-bold' : 'text-muted-foreground'
           }`}
           title="Inline Code"
         >
@@ -192,6 +247,7 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
 
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           className={`p-1.5 rounded hover:bg-secondary transition-colors ${
             editor.isActive('heading', { level: 2 }) ? 'bg-secondary text-primary font-bold' : 'text-muted-foreground'
@@ -203,6 +259,7 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
 
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
           className={`p-1.5 rounded hover:bg-secondary transition-colors ${
             editor.isActive('heading', { level: 3 }) ? 'bg-secondary text-primary font-bold' : 'text-muted-foreground'
@@ -216,9 +273,10 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
 
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           className={`p-1.5 rounded hover:bg-secondary transition-colors ${
-            editor.isActive('bulletList') ? 'bg-secondary text-primary' : 'text-muted-foreground'
+            editor.isActive('bulletList') ? 'bg-secondary text-primary font-bold' : 'text-muted-foreground'
           }`}
           title="Bullet List"
         >
@@ -227,9 +285,10 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
 
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           className={`p-1.5 rounded hover:bg-secondary transition-colors ${
-            editor.isActive('orderedList') ? 'bg-secondary text-primary' : 'text-muted-foreground'
+            editor.isActive('orderedList') ? 'bg-secondary text-primary font-bold' : 'text-muted-foreground'
           }`}
           title="Ordered List"
         >
@@ -238,9 +297,10 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
 
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           className={`p-1.5 rounded hover:bg-secondary transition-colors ${
-            editor.isActive('blockquote') ? 'bg-secondary text-primary' : 'text-muted-foreground'
+            editor.isActive('blockquote') ? 'bg-secondary text-primary font-bold' : 'text-muted-foreground'
           }`}
           title="Quote"
         >
@@ -252,8 +312,9 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
         {/* Callout Quick Actions */}
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => insertCallout('tip')}
-          className="flex items-center gap-1 px-1.5 py-1 rounded text-[11px] text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+          className="flex items-center gap-1 px-1.5 py-1 rounded text-[11px] font-medium text-emerald-500 hover:bg-emerald-500/10 transition-colors"
           title="Insert Tip Callout"
         >
           <Lightbulb className="w-3 h-3" />
@@ -262,8 +323,9 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
 
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => insertCallout('warning')}
-          className="flex items-center gap-1 px-1.5 py-1 rounded text-[11px] text-amber-500 hover:bg-amber-500/10 transition-colors"
+          className="flex items-center gap-1 px-1.5 py-1 rounded text-[11px] font-medium text-amber-500 hover:bg-amber-500/10 transition-colors"
           title="Insert Warning Callout"
         >
           <AlertTriangle className="w-3 h-3" />
@@ -272,8 +334,9 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
 
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => insertCallout('note')}
-          className="flex items-center gap-1 px-1.5 py-1 rounded text-[11px] text-blue-500 hover:bg-blue-500/10 transition-colors"
+          className="flex items-center gap-1 px-1.5 py-1 rounded text-[11px] font-medium text-blue-500 hover:bg-blue-500/10 transition-colors"
           title="Insert Note Callout"
         >
           <Info className="w-3 h-3" />
@@ -320,7 +383,16 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
         </div>
       )}
 
-      <EditorContent editor={editor} />
+      <div
+        className="cursor-text min-h-[140px] flex-1 flex flex-col"
+        onClick={() => {
+          if (editor && !editor.isFocused) {
+            editor.commands.focus('end');
+          }
+        }}
+      >
+        <EditorContent editor={editor} className="flex-1 flex flex-col" />
+      </div>
 
       {/* Review Guardrail Modal (Rule 7: Never mutate silently) */}
       {isReviewOpen && (
@@ -358,9 +430,9 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
                   Original Content
                 </div>
                 <div
-                  className="p-3 text-xs leading-relaxed overflow-y-auto max-h-[300px] prose prose-sm dark:prose-invert"
+                  className="p-3 text-xs leading-relaxed overflow-y-auto max-h-[300px] rich-text-content"
                   dangerouslySetInnerHTML={{
-                    __html: content && content.trim() ? content : '<em class="text-muted-foreground">No original instructions</em>',
+                    __html: content && content.trim() ? formatCalloutHtml(content) : '<em class="text-muted-foreground">No original instructions</em>',
                   }}
                 />
               </div>
@@ -372,9 +444,9 @@ export const WysiwygEditor: React.FC<WysiwygEditorProps> = ({
                   <span className="text-[10px] lowercase text-primary/70 font-normal">preview</span>
                 </div>
                 <div
-                  className="p-3 text-xs leading-relaxed overflow-y-auto max-h-[300px] prose prose-sm dark:prose-invert"
+                  className="p-3 text-xs leading-relaxed overflow-y-auto max-h-[300px] rich-text-content"
                   dangerouslySetInnerHTML={{
-                    __html: suggestedContent || '<em class="text-muted-foreground">No content generated</em>',
+                    __html: suggestedContent ? formatCalloutHtml(suggestedContent) : '<em class="text-muted-foreground">No content generated</em>',
                   }}
                 />
               </div>

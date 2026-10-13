@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { autoWriteGuideContent, AI_PROVIDER_DEFAULTS, StepUpdateItem } from '@/services/aiHarness';
+import { formatCalloutHtml } from '@/services/richText';
 import { AiProvider } from '@/types';
 import {
   Bot,
@@ -302,8 +303,8 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
                         {item.title}
                       </div>
                       <div
-                        className="text-[11px] text-muted-foreground pl-4 leading-relaxed prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: item.richInstructions }}
+                        className="text-[11px] text-muted-foreground pl-4 leading-relaxed rich-text-content"
+                        dangerouslySetInnerHTML={{ __html: formatCalloutHtml(item.richInstructions) }}
                       />
                     </div>
                   );
