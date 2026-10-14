@@ -48,6 +48,7 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
   const activeFolder = folders.find((f) => f.id === folderId) || null;
 
   const [orderedProjects, setOrderedProjects] = useState<Project[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -74,6 +75,7 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
         folderId === '__unorganized__' ? !p.folderId : folderId ? p.folderId === folderId : true
       );
       setOrderedProjects(folderProjects);
+      setSelectedProjectIds(folderProjects.map((p) => p.id));
       const defaultTitle = activeFolder
         ? `${activeFolder.name} Handbook`
         : folderId === '__unorganized__'
@@ -167,8 +169,23 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
     setOrderedProjects(next);
   };
 
+  const handleToggleSelectProject = (projectId: string) => {
+    setSelectedProjectIds((prev) =>
+      prev.includes(projectId) ? prev.filter((id) => id !== projectId) : [...prev, projectId]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedProjectIds.length === orderedProjects.length) {
+      setSelectedProjectIds([]);
+    } else {
+      setSelectedProjectIds(orderedProjects.map((p) => p.id));
+    }
+  };
+
   const handleExport = async () => {
-    if (orderedProjects.length === 0) return;
+    const projectsToExport = orderedProjects.filter((p) => selectedProjectIds.includes(p.id));
+    if (projectsToExport.length === 0) return;
     setIsExporting(true);
     setExportError(null);
     setProgressMsg('Initializing Master Binder...');
@@ -198,7 +215,7 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
 
     const res = await compileAndExportMasterBinder(
       activeFolder,
-      orderedProjects,
+      projectsToExport,
       branding,
       options,
       (msg) => setProgressMsg(msg)
@@ -225,7 +242,9 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
             <div>
               <h2 className="text-base font-bold text-foreground">Export Master Binder</h2>
               <p className="text-xs text-muted-foreground">
-                Combine {orderedProjects.length} guides into a unified, publication-ready handbook
+                {selectedProjectIds.length === orderedProjects.length
+                  ? `Combine ${orderedProjects.length} guides into a unified, publication-ready handbook`
+                  : `Combine ${selectedProjectIds.length} of ${orderedProjects.length} selected guides into a unified handbook`}
               </p>
             </div>
           </div>
@@ -486,10 +505,36 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
           {/* Guide Order List with Chapters & Steps */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-semibold text-foreground">
-                Guides Included in Binder ({orderedProjects.length})
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-foreground select-none">
+                <input
+                  type="checkbox"
+                  checked={orderedProjects.length > 0 && selectedProjectIds.length === orderedProjects.length}
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate =
+                        selectedProjectIds.length > 0 && selectedProjectIds.length < orderedProjects.length;
+                    }
+                  }}
+                  onChange={handleToggleSelectAll}
+                  disabled={isExporting || orderedProjects.length === 0}
+                  className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
+                />
+                <span>
+                  Guides Included in Binder ({selectedProjectIds.length}/{orderedProjects.length})
+                </span>
               </label>
-              <span className="text-[11px] text-muted-foreground">Adjust chapter sequence with arrows</span>
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={handleToggleSelectAll}
+                  disabled={isExporting || orderedProjects.length === 0}
+                  className="hover:text-foreground text-primary font-medium transition-colors cursor-pointer"
+                >
+                  {selectedProjectIds.length === orderedProjects.length ? 'Deselect All' : 'Select All'}
+                </button>
+                <span>&bull;</span>
+                <span>Adjust sequence with arrows</span>
+              </div>
             </div>
 
             {orderedProjects.length === 0 ? (
@@ -498,78 +543,101 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
               </div>
             ) : (
               <div className="divide-y divide-border border border-border rounded-lg max-h-48 overflow-y-auto bg-card">
-                {orderedProjects.map((p, idx) => (
-                  <div key={p.id} className="p-2.5 px-3 flex items-center justify-between text-xs hover:bg-secondary/40">
-                    <div className="flex items-center gap-2 overflow-hidden pr-2">
-                      <span className="font-mono text-[10px] text-muted-foreground w-4 text-center">
-                        {idx + 1}
-                      </span>
-                      <span className="font-medium text-foreground truncate">{p.title}</span>
-                      <span className="text-[10px] font-mono px-1 rounded bg-secondary text-muted-foreground flex-shrink-0">
-                        {p.category}
-                      </span>
-                      {projectChapterMap[p.id] > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium border border-primary/20 flex-shrink-0">
-                          {projectChapterMap[p.id]} {projectChapterMap[p.id] === 1 ? 'Chapter' : 'Chapters'}
-                        </span>
-                      )}
-                      {projectStepMap[p.id] !== undefined && (
-                        <span className="text-[10px] text-muted-foreground font-mono flex-shrink-0">
-                          {projectStepMap[p.id]} steps
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {projectVersionsMap[p.id] && projectVersionsMap[p.id].length > 0 ? (
-                        <select
-                          value={selectedVersions[p.id] || 'latest'}
-                          onChange={(e) => {
-                            setSelectedVersions((prev) => ({
-                              ...prev,
-                              [p.id]: e.target.value,
-                            }));
-                          }}
+                {orderedProjects.map((p, idx) => {
+                  const isSelected = selectedProjectIds.includes(p.id);
+                  return (
+                    <div
+                      key={p.id}
+                      className={`p-2.5 px-3 flex items-center justify-between text-xs transition-colors ${
+                        isSelected ? 'hover:bg-secondary/40' : 'bg-muted/20 opacity-60 hover:opacity-80'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 overflow-hidden pr-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectProject(p.id)}
                           disabled={isExporting}
-                          className="text-[11px] font-mono px-2 py-0.5 rounded bg-secondary/80 border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[170px] truncate"
-                          title="Select version of this guide to include in the handbook"
-                        >
-                          <option value="latest">Latest Draft (v{p.version})</option>
-                          {projectVersionsMap[p.id].map((ver) => (
-                            <option key={ver.id} value={ver.id}>
-                              v{ver.version} ({ver.stepsSnapshot.length} steps)
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary text-muted-foreground border border-border">
-                          v{p.version || '1.0.0'}
+                          className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer flex-shrink-0"
+                          title={isSelected ? 'Deselect guide from binder' : 'Include guide in binder'}
+                        />
+                        <span className="font-mono text-[10px] text-muted-foreground w-4 text-center flex-shrink-0">
+                          {idx + 1}
                         </span>
-                      )}
+                        <span
+                          className={`font-medium truncate ${
+                            isSelected ? 'text-foreground' : 'text-muted-foreground'
+                          }`}
+                          title={p.title}
+                        >
+                          {p.title}
+                        </span>
+                        <span className="text-[10px] font-mono px-1 rounded bg-secondary text-muted-foreground flex-shrink-0">
+                          {p.category}
+                        </span>
+                        {projectChapterMap[p.id] > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium border border-primary/20 flex-shrink-0">
+                            {projectChapterMap[p.id]} {projectChapterMap[p.id] === 1 ? 'Chapter' : 'Chapters'}
+                          </span>
+                        )}
+                        {projectStepMap[p.id] !== undefined && (
+                          <span className="text-[10px] text-muted-foreground font-mono flex-shrink-0">
+                            {projectStepMap[p.id]} steps
+                          </span>
+                        )}
+                      </div>
 
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          disabled={idx === 0 || isExporting}
-                          onClick={() => handleMoveUp(idx)}
-                          className="p-1 rounded hover:bg-secondary disabled:opacity-30 text-muted-foreground hover:text-foreground"
-                          title="Move Up"
-                        >
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={idx === orderedProjects.length - 1 || isExporting}
-                          onClick={() => handleMoveDown(idx)}
-                          className="p-1 rounded hover:bg-secondary disabled:opacity-30 text-muted-foreground hover:text-foreground"
-                          title="Move Down"
-                        >
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        </button>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {projectVersionsMap[p.id] && projectVersionsMap[p.id].length > 0 ? (
+                          <select
+                            value={selectedVersions[p.id] || 'latest'}
+                            onChange={(e) => {
+                              setSelectedVersions((prev) => ({
+                                ...prev,
+                                [p.id]: e.target.value,
+                              }));
+                            }}
+                            disabled={isExporting}
+                            className="text-[11px] font-mono px-2 py-0.5 rounded bg-secondary/80 border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[170px] truncate"
+                            title="Select version of this guide to include in the handbook"
+                          >
+                            <option value="latest">Latest Draft (v{p.version})</option>
+                            {projectVersionsMap[p.id].map((ver) => (
+                              <option key={ver.id} value={ver.id}>
+                                v{ver.version} ({ver.stepsSnapshot.length} steps)
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary text-muted-foreground border border-border">
+                            v{p.version || '1.0.0'}
+                          </span>
+                        )}
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={idx === 0 || isExporting}
+                            onClick={() => handleMoveUp(idx)}
+                            className="p-1 rounded hover:bg-secondary disabled:opacity-30 text-muted-foreground hover:text-foreground"
+                            title="Move Up"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === orderedProjects.length - 1 || isExporting}
+                            onClick={() => handleMoveDown(idx)}
+                            className="p-1 rounded hover:bg-secondary disabled:opacity-30 text-muted-foreground hover:text-foreground"
+                            title="Move Down"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -611,7 +679,7 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
             </button>
             <button
               type="button"
-              disabled={isExporting || orderedProjects.length === 0}
+              disabled={isExporting || selectedProjectIds.length === 0}
               onClick={handleExport}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-xs hover:bg-primary/90 disabled:opacity-40 transition-all shadow-sm"
             >
@@ -623,7 +691,12 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
               ) : (
                 <>
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Master Binder</span>
+                  <span>
+                    Export Master Binder
+                    {selectedProjectIds.length > 0 && selectedProjectIds.length < orderedProjects.length
+                      ? ` (${selectedProjectIds.length})`
+                      : ''}
+                  </span>
                 </>
               )}
             </button>

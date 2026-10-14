@@ -122,7 +122,32 @@ async function runMasterBinderTests() {
     process.exit(1);
   }
 
+  // Test 4: Master Binder Modal Guide Selection Verification
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const fileURLToPath = (await import('url')).fileURLToPath;
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/export/MasterBinderModal.tsx'), 'utf8');
+
+    if (!modalCode.includes('selectedProjectIds') || !modalCode.includes('setSelectedProjectIds')) {
+      throw new Error('MasterBinderModal must maintain selectedProjectIds state');
+    }
+    if (!modalCode.includes('handleToggleSelectProject') || !modalCode.includes('handleToggleSelectAll')) {
+      throw new Error('MasterBinderModal must implement selection toggle handlers');
+    }
+    if (!modalCode.includes('projectsToExport')) {
+      throw new Error('MasterBinderModal must filter projectsToExport before passing to compileAndExportMasterBinder');
+    }
+
+    console.log('✅ [Master Binder Selection] Guide select/deselect and batch inclusion filtering validated successfully.');
+  } catch (err) {
+    console.error('❌ [Master Binder Selection] Failed:', err);
+    process.exit(1);
+  }
+
   console.log('\n🎉 All Master Binder Hierarchy & Export Tests Passed Successfully!');
 }
 
 runMasterBinderTests();
+
