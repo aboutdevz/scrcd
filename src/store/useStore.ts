@@ -542,6 +542,28 @@ export const useStore = create<AppState>((set, get) => ({
       stepHistoryPast: [...stepHistoryPast.slice(-10), steps],
       stepHistoryFuture: [],
     });
+
+    let originalWidth = 1920;
+    let originalHeight = 1080;
+    if (typeof window !== 'undefined' && window.Image) {
+      try {
+        const img = new window.Image();
+        img.src = fileDataUrl;
+        await new Promise<void>((resolve) => {
+          if (img.complete && img.naturalWidth > 0) {
+            resolve();
+          } else {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+          }
+        });
+        if (img.naturalWidth > 0) originalWidth = img.naturalWidth;
+        if (img.naturalHeight > 0) originalHeight = img.naturalHeight;
+      } catch {
+        // Fallback to defaults
+      }
+    }
+
     const now = Date.now();
     const stepNumber = steps.length + 1;
     const newStep: Step = {
@@ -552,8 +574,8 @@ export const useStore = create<AppState>((set, get) => ({
       richInstructions: '<p>Perform actions as illustrated in the screenshot.</p>',
       actionType: 'snapshot',
       screenshotPath: fileDataUrl,
-      originalWidth: 1920,
-      originalHeight: 1080,
+      originalWidth,
+      originalHeight,
       clickX: 0,
       clickY: 0,
       uiaName: 'Uploaded Image',
@@ -563,9 +585,16 @@ export const useStore = create<AppState>((set, get) => ({
       isPassword: false,
       createdAt: now,
     };
+
+    const updatedSteps = [...steps, newStep];
+    set({
+      steps: updatedSteps,
+      activeStepId: newStep.id,
+      hasUnsavedChanges: true,
+      selectedShapeId: null,
+    });
+
     await api.saveStep(newStep);
-    await get().loadSteps(activeProject.id);
-    set({ activeStepId: newStep.id, hasUnsavedChanges: true });
     return newStep;
   },
 

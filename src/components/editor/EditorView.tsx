@@ -4,7 +4,9 @@ import { CanvasStage } from './CanvasStage';
 import { WysiwygEditor } from './WysiwygEditor';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { ConfirmModal } from '@/components/common/ConfirmModal';
+import { MergeStepsModal } from './MergeStepsModal';
 import { AiHarnessModal } from './AiHarnessModal';
+import { getElectron } from '@/services/api';
 import { AnnotationTool, AnnotationShape, Step, ActionType } from '@/types';
 import {
   MousePointer,
@@ -28,6 +30,7 @@ import {
   Play,
   Camera,
   ImagePlus,
+  ClipboardPaste,
   FileText,
   PanelLeftClose,
   PanelLeftOpen,
@@ -251,6 +254,95 @@ export const EditorView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedShapeId, activeStep, history, undoStep, redoStep]);
 
+  // Global clipboard image paste handler (Ctrl+V)
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.closest('.ProseMirror') !== null);
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      let imageItem: DataTransferItem | null = null;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          imageItem = items[i];
+          break;
+        }
+      }
+
+      if (imageItem) {
+        if (isInput && e.clipboardData?.types.includes('text/plain')) {
+          return;
+        }
+        e.preventDefault();
+        const file = imageItem.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = async (evt) => {
+            const dataUrl = evt.target?.result as string;
+            if (dataUrl) {
+              await addStepFromImage(dataUrl, 'Pasted Screenshot');
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [addStepFromImage]);
+
+  const handlePasteFromClipboard = async () => {
+    setIsAddStepMenuOpen(false);
+    // 1. Try Electron native clipboard
+    const electron = getElectron();
+    if (electron?.clipboard) {
+      try {
+        const nativeImg = electron.clipboard.readImage();
+        if (nativeImg && !nativeImg.isEmpty()) {
+          const dataUrl = nativeImg.toDataURL();
+          await addStepFromImage(dataUrl, 'Pasted Screenshot');
+          return;
+        }
+      } catch (err) {
+        console.warn('Electron clipboard read failed', err);
+      }
+    }
+
+    // 2. Try Web Navigator Clipboard API
+    if (navigator.clipboard && navigator.clipboard.read) {
+      try {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+          const imageType = item.types.find((t) => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            const reader = new FileReader();
+            reader.onload = async (evt) => {
+              const dataUrl = evt.target?.result as string;
+              if (dataUrl) {
+                await addStepFromImage(dataUrl, 'Pasted Screenshot');
+              }
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Web clipboard read failed', err);
+      }
+    }
+
+    alert('No image found in clipboard. Please copy or take a screenshot first (e.g. Win+Shift+S or PrintScreen).');
+  };
+
   // Selected shape details if any
   const selectedShape = activeStep?.annotations.find((a) => a.id === selectedShapeId);
 
@@ -376,6 +468,22 @@ export const EditorView: React.FC = () => {
                   </div>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={handlePasteFromClipboard}
+                  className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-secondary text-left transition-colors text-foreground"
+                >
+                  <div className="p-1 rounded-md bg-purple-500/10 text-purple-500 mt-0.5">
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-xs">Paste Screenshot</div>
+                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                      Paste image from clipboard (Ctrl+V)
+                    </div>
+                  </div>
+                </button>
+
                 <label className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-secondary text-left transition-colors text-foreground cursor-pointer">
                   <div className="p-1 rounded-md bg-blue-500/10 text-blue-500 mt-0.5">
                     <ImagePlus className="w-3.5 h-3.5" />
@@ -495,6 +603,7 @@ export const EditorView: React.FC = () => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        selectStep(step.id);
                         setStepToMerge({ s1: step, s2: steps[idx + 1] });
                       }}
                       className="absolute right-2 bottom-2 p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
@@ -619,12 +728,69 @@ export const EditorView: React.FC = () => {
               </button>
             )}
 
+            {/* Text Shape controls if text shape selected */}
+            {selectedShape && selectedShape.type === 'text' && (
+              <div className="flex items-center gap-1.5 bg-secondary/80 border border-border px-2 py-1 rounded-lg">
+                <span className="text-[11px] font-semibold text-muted-foreground">Text:</span>
+                <input
+                  type="text"
+                  value={selectedShape.text}
+                  onChange={(e) => {
+                    const newText = e.target.value;
+                    const updated = activeStep.annotations.map((a) =>
+                      a.id === selectedShape.id ? { ...a, text: newText } : a
+                    );
+                    handleUpdateAnnotations({ ...activeStep, annotations: updated });
+                  }}
+                  className="px-2 py-0.5 rounded border border-border bg-background text-foreground text-xs font-medium w-32 focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="Text label..."
+                />
+                <select
+                  value={selectedShape.fontSize || 14}
+                  onChange={(e) => {
+                    const newSize = Number(e.target.value);
+                    const updated = activeStep.annotations.map((a) =>
+                      a.id === selectedShape.id ? { ...a, fontSize: newSize } : a
+                    );
+                    handleUpdateAnnotations({ ...activeStep, annotations: updated });
+                  }}
+                  className="px-1 py-0.5 rounded border border-border bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                  title="Font size"
+                >
+                  <option value={12}>12px</option>
+                  <option value={14}>14px</option>
+                  <option value={16}>16px</option>
+                  <option value={18}>18px</option>
+                  <option value={20}>20px</option>
+                  <option value={24}>24px</option>
+                </select>
+              </div>
+            )}
+
             {/* Color Palette */}
             <div className="flex items-center gap-1 border-r border-border pr-2">
               {colorPalette.map((c) => (
                 <button
                   key={c}
-                  onClick={() => setToolColor(c)}
+                  onClick={() => {
+                    setToolColor(c);
+                    if (selectedShape && activeStep) {
+                      const updated = activeStep.annotations.map((a) =>
+                        a.id === selectedShape.id
+                          ? a.type === 'text'
+                            ? { ...a, color: c }
+                            : a.type === 'highlighter' || a.type === 'arrow'
+                            ? { ...a, color: c }
+                            : a.type === 'rect' || a.type === 'oval'
+                            ? { ...a, strokeColor: c }
+                            : a.type === 'hotspot'
+                            ? { ...a, color: c }
+                            : a
+                          : a
+                      );
+                      handleUpdateAnnotations({ ...activeStep, annotations: updated });
+                    }
+                  }}
                   className={`w-3.5 h-3.5 rounded-full border transition-transform ${
                     toolColor === c ? 'scale-125 ring-2 ring-primary/40' : 'hover:scale-110'
                   }`}
@@ -664,6 +830,7 @@ export const EditorView: React.FC = () => {
             onUpdateStep={handleUpdateAnnotations}
             selectedShapeId={selectedShapeId}
             onSelectShape={setSelectedShapeId}
+            onToolChange={setActiveTool}
           />
         )}
       </main>
@@ -862,17 +1029,11 @@ export const EditorView: React.FC = () => {
         onCancel={() => setStepToDelete(null)}
       />
 
-      {/* Merge Step Confirmation Modal */}
-      <ConfirmModal
+      {/* Visual Merge Steps Modal */}
+      <MergeStepsModal
         isOpen={Boolean(stepToMerge)}
-        title="Merge Steps"
-        message={
-          stepToMerge
-            ? `Merge Step ${stepToMerge.s1.stepNumber} ("${stepToMerge.s1.title || 'Untitled'}") with Step ${stepToMerge.s2.stepNumber} ("${stepToMerge.s2.title || 'Untitled'}")? All annotations and instructions from Step ${stepToMerge.s2.stepNumber} will be combined into Step ${stepToMerge.s1.stepNumber}, and Step ${stepToMerge.s2.stepNumber} will be removed. You can undo this change anytime with Ctrl+Z.`
-            : ''
-        }
-        confirmLabel="Merge Steps"
-        isDestructive={false}
+        s1={stepToMerge?.s1 || null}
+        s2={stepToMerge?.s2 || null}
         onConfirm={async () => {
           if (stepToMerge) {
             const { s1, s2 } = stepToMerge;

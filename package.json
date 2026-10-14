@@ -11,7 +11,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node tests/exportTest.js && node tests/masterBinderTest.js && node tests/richTextTest.js && node tests/typingStepTest.js",
+    "test": "node tests/exportTest.js && node tests/masterBinderTest.js && node tests/richTextTest.js && node tests/typingStepTest.js && node tests/canvasAndMergeTest.js",
     "build:tools": "powershell -ExecutionPolicy Bypass -File tools/build-tools.ps1",
     "build:exe": "npm run build && electron-builder --win portable",
     "build:installer": "npm run build && electron-builder --win nsis",

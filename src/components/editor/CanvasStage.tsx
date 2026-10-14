@@ -13,7 +13,28 @@ import {
   Path,
   Transformer,
 } from 'react-konva';
-import { Step, AnnotationShape, AnnotationTool, BlurShape } from '@/types';
+import { Step, AnnotationShape, AnnotationTool, BlurShape, TextShape } from '@/types';
+
+export const measureTextPill = (text: string, fontSize: number = 14) => {
+  const paddingX = 12;
+  const paddingY = 8;
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      const metrics = ctx.measureText(text || ' ');
+      return {
+        width: Math.max(60, Math.round(metrics.width + paddingX * 2)),
+        height: Math.round(fontSize + paddingY * 2),
+      };
+    }
+  }
+  return {
+    width: Math.max(60, (text?.length || 1) * fontSize * 0.65 + paddingX * 2),
+    height: fontSize + paddingY * 2,
+  };
+};
 
 interface CanvasStageProps {
   step: Step;
@@ -24,6 +45,7 @@ interface CanvasStageProps {
   onUpdateStep: (updated: Step) => void;
   selectedShapeId: string | null;
   onSelectShape: (id: string | null) => void;
+  onToolChange?: (tool: AnnotationTool) => void;
 }
 
 interface PixelatedBlurShapeProps {
@@ -136,16 +158,37 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   onUpdateStep,
   selectedShapeId,
   onSelectShape,
+  onToolChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
   const trRef = useRef<any>(null);
+  const inlineInputRef = useRef<HTMLInputElement>(null);
 
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentShape, setCurrentShape] = useState<any>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+
+  const commitTextEdit = () => {
+    if (!editingTextId) return;
+    const trimmed = editingValue.trim() || 'Instruction';
+    const updated = step.annotations.map((a) =>
+      a.id === editingTextId && a.type === 'text' ? { ...a, text: trimmed } : a
+    );
+    onUpdateStep({ ...step, annotations: updated });
+    setEditingTextId(null);
+  };
+
+  useEffect(() => {
+    if (editingTextId && inlineInputRef.current) {
+      inlineInputRef.current.focus();
+      inlineInputRef.current.select();
+    }
+  }, [editingTextId]);
 
   // Load screenshot
   useEffect(() => {
@@ -268,14 +311,15 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     }
 
     if (activeTool === 'text') {
+      const defaultText = 'Type instruction here...';
       const newText: AnnotationShape = {
         id: newId,
         type: 'text',
         x: stageX,
         y: stageY,
-        text: 'Type instruction here...',
+        text: defaultText,
         fontSize: 14,
-        color: '#ffffff',
+        color: toolColor || '#ffffff',
         backgroundColor: 'rgba(15, 23, 42, 0.9)',
       };
       onUpdateStep({
@@ -284,6 +328,9 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       });
       setIsDrawing(false);
       onSelectShape(newId);
+      onToolChange?.('select');
+      setEditingTextId(newId);
+      setEditingValue(defaultText);
       return;
     }
 
@@ -425,6 +472,15 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             x: node.x(),
             y: node.y(),
             radius: newRadius,
+          };
+        }
+        if (a.type === 'text') {
+          const newFontSize = Math.max(10, Math.min(48, Math.round((a.fontSize || 14) * scaleY)));
+          return {
+            ...a,
+            x: node.x(),
+            y: node.y(),
+            fontSize: newFontSize,
           };
         }
         return { ...a, x: node.x(), y: node.y() };
@@ -637,14 +693,21 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             }
 
             if (shape.type === 'text') {
+              const { width: pillWidth, height: pillHeight } = measureTextPill(shape.text, shape.fontSize || 14);
+              const isEditing = editingTextId === shape.id;
               return (
                 <Group
                   key={shape.id}
                   id={shape.id}
                   x={shape.x}
                   y={shape.y}
-                  draggable={activeTool === 'select'}
+                  opacity={isEditing ? 0.2 : 1}
+                  draggable={activeTool === 'select' && !isEditing}
                   onClick={() => onSelectShape(shape.id)}
+                  onDblClick={() => {
+                    setEditingTextId(shape.id);
+                    setEditingValue(shape.text);
+                  }}
                   onTransformEnd={handleTransformEnd}
                   onDragEnd={(e) => {
                     const updated = step.annotations.map((a) =>
@@ -654,8 +717,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
                   }}
                 >
                   <Rect
-                    width={160}
-                    height={36}
+                    width={pillWidth}
+                    height={pillHeight}
                     fill={shape.backgroundColor || 'rgba(15, 23, 42, 0.9)'}
                     cornerRadius={6}
                     stroke={isSelected ? '#38bdf8' : 'rgba(255,255,255,0.2)'}
@@ -664,6 +727,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
                   <Text
                     text={shape.text}
                     fontSize={shape.fontSize || 14}
+                    fontStyle="bold"
                     fill={shape.color || '#ffffff'}
                     padding={8}
                   />
@@ -834,6 +898,49 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
           />
         </Layer>
       </Stage>
+
+      {/* Inline Text Editor Overlay */}
+      {editingTextId && (() => {
+        const targetShape = step.annotations.find(
+          (a) => a.id === editingTextId && a.type === 'text'
+        ) as TextShape | undefined;
+        if (!targetShape) return null;
+        const screenX = position.x + targetShape.x * scale;
+        const screenY = position.y + targetShape.y * scale;
+        const fontSize = Math.max(12, Math.round((targetShape.fontSize || 14) * scale));
+
+        return (
+          <div
+            className="absolute z-30"
+            style={{
+              left: `${Math.round(screenX)}px`,
+              top: `${Math.round(screenY)}px`,
+            }}
+          >
+            <input
+              ref={inlineInputRef}
+              type="text"
+              value={editingValue}
+              onChange={(e) => setEditingValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitTextEdit();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setEditingTextId(null);
+                }
+              }}
+              onBlur={commitTextEdit}
+              className="px-2.5 py-1 rounded-md border-2 border-primary bg-slate-900 text-white font-semibold outline-none shadow-2xl"
+              style={{
+                fontSize: `${fontSize}px`,
+                minWidth: '160px',
+              }}
+            />
+          </div>
+        );
+      })()}
 
       {/* Floating Canvas Zoom Controls */}
       <div className="absolute bottom-4 right-4 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700/60 text-white text-xs shadow-xl">
