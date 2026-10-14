@@ -29,6 +29,7 @@ import {
   MoreHorizontal,
   MoveRight,
   Check,
+  UserCheck,
 } from 'lucide-react';
 
 interface ProjectDashboardProps {
@@ -104,11 +105,15 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
   const [folderName, setFolderName] = useState('');
   const [folderDesc, setFolderDesc] = useState('');
   const [folderColor, setFolderColor] = useState('#2563eb');
+  const [folderRoles, setFolderRoles] = useState<string[]>([]);
+  const [folderRoleInput, setFolderRoleInput] = useState('');
 
   const [folderToEdit, setFolderToEdit] = useState<Folder | null>(null);
   const [editFolderName, setEditFolderName] = useState('');
   const [editFolderDesc, setEditFolderDesc] = useState('');
   const [editFolderColor, setEditFolderColor] = useState('#2563eb');
+  const [editFolderRoles, setEditFolderRoles] = useState<string[]>([]);
+  const [editFolderRoleInput, setEditFolderRoleInput] = useState('');
 
   const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null);
   const [deleteFolderGuides, setDeleteFolderGuides] = useState(false);
@@ -196,13 +201,48 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
     setIsCreating(false);
   };
 
+  const ROLE_SUGGESTIONS = [
+    'Administrator',
+    'Operator',
+    'DevOps',
+    'Security',
+    'Manager',
+    'Analyst',
+    'Support',
+    'End User',
+  ];
+
+  const handleAddFolderRole = (role: string) => {
+    const trimmed = role.trim();
+    if (!trimmed || folderRoles.includes(trimmed)) return;
+    setFolderRoles([...folderRoles, trimmed]);
+    setFolderRoleInput('');
+  };
+
+  const handleRemoveFolderRole = (role: string) => {
+    setFolderRoles(folderRoles.filter((r) => r !== role));
+  };
+
+  const handleAddEditFolderRole = (role: string) => {
+    const trimmed = role.trim();
+    if (!trimmed || editFolderRoles.includes(trimmed)) return;
+    setEditFolderRoles([...editFolderRoles, trimmed]);
+    setEditFolderRoleInput('');
+  };
+
+  const handleRemoveEditFolderRole = (role: string) => {
+    setEditFolderRoles(editFolderRoles.filter((r) => r !== role));
+  };
+
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!folderName.trim()) return;
-    const created = await createFolder(folderName.trim(), folderDesc.trim(), folderColor);
+    const created = await createFolder(folderName.trim(), folderDesc.trim(), folderColor, folderRoles);
     setFolderName('');
     setFolderDesc('');
     setFolderColor('#2563eb');
+    setFolderRoles([]);
+    setFolderRoleInput('');
     setIsCreatingFolder(false);
     setActiveFolderId(created.id);
   };
@@ -214,6 +254,7 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
       name: editFolderName.trim(),
       description: editFolderDesc.trim(),
       color: editFolderColor,
+      targetRoles: editFolderRoles,
       updatedAt: Date.now(),
     });
     setFolderToEdit(null);
@@ -570,6 +611,20 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                     {filteredProjects.length}
                   </span>
 
+                  {activeFolder.targetRoles && activeFolder.targetRoles.length > 0 && (
+                    <div className="hidden sm:flex items-center gap-1 ml-2">
+                      {activeFolder.targetRoles.map((role) => (
+                        <span
+                          key={role}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20"
+                        >
+                          <UserCheck className="w-2.5 h-2.5" />
+                          <span>{role}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
@@ -577,6 +632,8 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                       setEditFolderName(activeFolder.name);
                       setEditFolderDesc(activeFolder.description || '');
                       setEditFolderColor(activeFolder.color || '#2563eb');
+                      setEditFolderRoles(activeFolder.targetRoles || []);
+                      setEditFolderRoleInput('');
                     }}
                     className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors ml-1"
                     title="Edit Folder Name & Color"
@@ -1464,6 +1521,62 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                     </div>
                   </div>
 
+                  <div>
+                    <label className="text-xs font-semibold text-foreground mb-1 block">
+                      Designated Roles (Target Audience)
+                    </label>
+                    <div className="p-2 rounded-lg bg-secondary/40 border border-border space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {folderRoles.map((role) => (
+                          <span
+                            key={role}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs bg-primary/10 text-primary border border-primary/20"
+                          >
+                            <UserCheck className="w-3 h-3" />
+                            <span>{role}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFolderRole(role)}
+                              className="p-0.5 hover:text-destructive transition-colors ml-0.5"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                        <input
+                          type="text"
+                          value={folderRoleInput}
+                          onChange={(e) => setFolderRoleInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ',') {
+                              e.preventDefault();
+                              handleAddFolderRole(folderRoleInput);
+                            }
+                          }}
+                          placeholder={
+                            folderRoles.length === 0
+                              ? 'Type role and press Enter...'
+                              : 'Add another role...'
+                          }
+                          className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none flex-1 min-w-[140px] py-0.5"
+                        />
+                      </div>
+                      <div className="pt-1 flex flex-wrap items-center gap-1 border-t border-border/40 text-[10px]">
+                        <span className="text-muted-foreground">Suggestions:</span>
+                        {ROLE_SUGGESTIONS.filter((r) => !folderRoles.includes(r)).slice(0, 4).map((sug) => (
+                          <button
+                            key={sug}
+                            type="button"
+                            onClick={() => handleAddFolderRole(sug)}
+                            className="px-1.5 py-0.5 rounded bg-background hover:bg-secondary text-muted-foreground hover:text-foreground border border-border"
+                          >
+                            + {sug}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
                     <button
                       type="button"
@@ -1541,6 +1654,62 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                           title={c.label}
                         />
                       ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-foreground mb-1 block">
+                      Designated Roles (Target Audience)
+                    </label>
+                    <div className="p-2 rounded-lg bg-secondary/40 border border-border space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {editFolderRoles.map((role) => (
+                          <span
+                            key={role}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs bg-primary/10 text-primary border border-primary/20"
+                          >
+                            <UserCheck className="w-3 h-3" />
+                            <span>{role}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEditFolderRole(role)}
+                              className="p-0.5 hover:text-destructive transition-colors ml-0.5"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                        <input
+                          type="text"
+                          value={editFolderRoleInput}
+                          onChange={(e) => setEditFolderRoleInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ',') {
+                              e.preventDefault();
+                              handleAddEditFolderRole(editFolderRoleInput);
+                            }
+                          }}
+                          placeholder={
+                            editFolderRoles.length === 0
+                              ? 'Type role and press Enter...'
+                              : 'Add another role...'
+                          }
+                          className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none flex-1 min-w-[140px] py-0.5"
+                        />
+                      </div>
+                      <div className="pt-1 flex flex-wrap items-center gap-1 border-t border-border/40 text-[10px]">
+                        <span className="text-muted-foreground">Suggestions:</span>
+                        {ROLE_SUGGESTIONS.filter((r) => !editFolderRoles.includes(r)).slice(0, 4).map((sug) => (
+                          <button
+                            key={sug}
+                            type="button"
+                            onClick={() => handleAddEditFolderRole(sug)}
+                            className="px-1.5 py-0.5 rounded bg-background hover:bg-secondary text-muted-foreground hover:text-foreground border border-border"
+                          >
+                            + {sug}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -15,6 +15,14 @@ import {
   Layers,
   FileCode,
   FileCheck,
+  User,
+  Building2,
+  Image,
+  Upload,
+  UserCheck,
+  Tag,
+  Shield,
+  Trash2,
 } from 'lucide-react';
 
 interface MasterBinderModalProps {
@@ -23,17 +31,30 @@ interface MasterBinderModalProps {
   folderId: string | null;
 }
 
+const ROLE_SUGGESTIONS = [
+  'Administrator',
+  'Operator',
+  'DevOps',
+  'Security',
+  'Manager',
+  'Analyst',
+  'Support',
+  'End User',
+];
+
 export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, onClose, folderId }) => {
-  const { folders, projects, branding } = useStore();
+  const { folders, projects, branding, updateFolder } = useStore();
 
   const activeFolder = folders.find((f) => f.id === folderId) || null;
-  const initialFolderProjects = projects.filter((p) =>
-    folderId === '__unorganized__' ? !p.folderId : p.folderId === folderId
-  );
 
   const [orderedProjects, setOrderedProjects] = useState<Project[]>([]);
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
+  const [author, setAuthor] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [targetRoles, setTargetRoles] = useState<string[]>([]);
+  const [roleInput, setRoleInput] = useState('');
   const [format, setFormat] = useState<'pdf' | 'html' | 'docx'>('pdf');
   const [includeCover, setIncludeCover] = useState(true);
   const [includeToc, setIncludeToc] = useState(true);
@@ -41,9 +62,11 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
   const [progressMsg, setProgressMsg] = useState('');
   const [exportError, setExportError] = useState<string | null>(null);
 
-  // Per-guide version selection
+  // Per-guide version selection and meta
   const [projectVersionsMap, setProjectVersionsMap] = useState<Record<string, GuideVersion[]>>({});
   const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
+  const [projectChapterMap, setProjectChapterMap] = useState<Record<string, number>>({});
+  const [projectStepMap, setProjectStepMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (isOpen) {
@@ -58,31 +81,73 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
         : 'All Guides Master Handbook';
       setTitle(defaultTitle);
       setSubtitle(activeFolder?.description || 'Standard Operating Procedures & Operational Manual');
+      setAuthor(branding.author || projects.find((p) => p.author)?.author || 'System Operations Team');
+      setCompanyName(branding.companyName || projects.find((p) => p.companyName)?.companyName || 'Acme Corporation');
+      setLogoUrl(branding.logoUrl || projects.find((p) => p.logoUrl)?.logoUrl || '');
+      setTargetRoles(activeFolder?.targetRoles || []);
+      setRoleInput('');
       setIsExporting(false);
       setProgressMsg('');
       setExportError(null);
     }
-  }, [isOpen, folderId, activeFolder, projects]);
+  }, [isOpen, folderId, activeFolder, projects, branding]);
 
   useEffect(() => {
     if (isOpen && orderedProjects.length > 0) {
-      const loadAllVersions = async () => {
-        const map: Record<string, GuideVersion[]> = {};
+      const loadAllVersionsAndMeta = async () => {
+        const vMap: Record<string, GuideVersion[]> = {};
+        const chMap: Record<string, number> = {};
+        const stMap: Record<string, number> = {};
         for (const p of orderedProjects) {
           try {
             const vers = await api.listProjectVersions(p.id);
-            map[p.id] = vers;
+            vMap[p.id] = vers;
           } catch {
-            map[p.id] = [];
+            vMap[p.id] = [];
+          }
+          try {
+            const steps = await api.listSteps(p.id);
+            stMap[p.id] = steps.length;
+            const chapters = new Set(steps.map((s) => s.sectionTitle?.trim()).filter(Boolean));
+            chMap[p.id] = chapters.size;
+          } catch {
+            stMap[p.id] = 0;
+            chMap[p.id] = 0;
           }
         }
-        setProjectVersionsMap(map);
+        setProjectVersionsMap(vMap);
+        setProjectChapterMap(chMap);
+        setProjectStepMap(stMap);
       };
-      loadAllVersions();
+      loadAllVersionsAndMeta();
     }
   }, [isOpen, orderedProjects]);
 
   if (!isOpen) return null;
+
+  const handleAddRole = (roleToAdd: string) => {
+    const trimmed = roleToAdd.trim();
+    if (!trimmed || targetRoles.includes(trimmed)) return;
+    setTargetRoles([...targetRoles, trimmed]);
+    setRoleInput('');
+  };
+
+  const handleRemoveRole = (roleToRemove: string) => {
+    setTargetRoles(targetRoles.filter((r) => r !== roleToRemove));
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const dataUrl = uploadEvent.target?.result as string;
+      if (dataUrl) {
+        setLogoUrl(dataUrl);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleMoveUp = (index: number) => {
     if (index <= 0) return;
@@ -108,12 +173,23 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
     setExportError(null);
     setProgressMsg('Initializing Master Binder...');
 
+    // Persist designated roles to folder if activeFolder
+    if (activeFolder && JSON.stringify(activeFolder.targetRoles || []) !== JSON.stringify(targetRoles)) {
+      await updateFolder({
+        ...activeFolder,
+        targetRoles,
+        updatedAt: Date.now(),
+      });
+    }
+
     const options: MasterBinderOptions = {
       title: title.trim() || 'Master Binder Handbook',
       subtitle: subtitle.trim(),
-      author: branding.author,
-      companyName: branding.companyName,
+      author: author.trim() || branding.author || 'System Operations Team',
+      companyName: companyName.trim() || branding.companyName || 'Acme Corporation',
+      logoUrl: logoUrl.trim() || undefined,
       accentColor: branding.accentColor,
+      targetRoles,
       includeCoverPage: includeCover,
       includeTableOfContents: includeToc,
       format,
@@ -163,9 +239,9 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
         </div>
 
         {/* Content Body */}
-        <div className="p-6 space-y-6 overflow-y-auto flex-1">
-          {/* Metadata */}
-          <div className="grid grid-cols-1 gap-4">
+        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+          {/* Document Title & Subtitle */}
+          <div className="grid grid-cols-1 gap-3.5">
             <div>
               <label className="text-xs font-semibold text-foreground mb-1 block">Document Title</label>
               <input
@@ -185,6 +261,149 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
                 placeholder="e.g. Standard Operating Procedures for Cloud Infrastructure"
                 className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
+            </div>
+          </div>
+
+          {/* Author, Company, & Logo Section */}
+          <div className="p-3.5 rounded-lg bg-secondary/20 border border-border space-y-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-foreground mb-1 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-primary" />
+                  <span>Author / Team</span>
+                </label>
+                <input
+                  type="text"
+                  value={author}
+                  onChange={(e) => setAuthor(e.target.value)}
+                  placeholder="e.g. DevOps Operations Team"
+                  className="w-full px-3 py-1.5 rounded-lg bg-background border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-foreground mb-1 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-primary" />
+                  <span>Company / Organization</span>
+                </label>
+                <input
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="e.g. Acme Corporation"
+                  className="w-full px-3 py-1.5 rounded-lg bg-background border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            {/* Logo Preview & Upload */}
+            <div>
+              <label className="text-xs font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
+                <Image className="w-3.5 h-3.5 text-primary" />
+                <span>Publication Logo</span>
+              </label>
+              <div className="flex items-center gap-3">
+                {logoUrl ? (
+                  <div className="relative group flex items-center gap-2 p-1.5 rounded-lg bg-background border border-border">
+                    <img
+                      src={logoUrl}
+                      alt="Handbook Logo"
+                      className="h-8 max-w-[140px] object-contain rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setLogoUrl('')}
+                      className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors"
+                      title="Remove Logo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground italic flex items-center gap-1.5">
+                    No logo selected (optional)
+                  </div>
+                )}
+
+                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 border border-border text-xs font-medium text-foreground cursor-pointer transition-colors">
+                  <Upload className="w-3.5 h-3.5 text-primary" />
+                  <span>{logoUrl ? 'Change Logo' : 'Upload Logo'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Designated Roles Tagging Section */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5 text-primary" />
+                <span>Designated Roles (Target Audience)</span>
+              </label>
+              <span className="text-[11px] text-muted-foreground">
+                Specifies who this handbook is meant for
+              </span>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-secondary/30 border border-border space-y-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {targetRoles.map((role) => (
+                  <span
+                    key={role}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20"
+                  >
+                    <UserCheck className="w-3 h-3" />
+                    <span>{role}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveRole(role)}
+                      className="p-0.5 hover:text-destructive transition-colors ml-0.5"
+                      title={`Remove ${role}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+
+                <input
+                  type="text"
+                  value={roleInput}
+                  onChange={(e) => setRoleInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ',') {
+                      e.preventDefault();
+                      handleAddRole(roleInput);
+                    }
+                  }}
+                  placeholder={
+                    targetRoles.length === 0
+                      ? 'Type role and press Enter (e.g. Administrator, DevOps)...'
+                      : 'Add another role...'
+                  }
+                  className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none flex-1 min-w-[160px] py-0.5"
+                />
+              </div>
+
+              {/* Suggestions */}
+              <div className="pt-1.5 flex flex-wrap items-center gap-1 border-t border-border/40 text-[11px]">
+                <span className="text-[10px] text-muted-foreground font-medium mr-1">Suggestions:</span>
+                {ROLE_SUGGESTIONS.filter((r) => !targetRoles.includes(r)).map((sug) => (
+                  <button
+                    key={sug}
+                    type="button"
+                    onClick={() => handleAddRole(sug)}
+                    className="px-2 py-0.5 rounded bg-background hover:bg-secondary text-[10px] text-muted-foreground hover:text-foreground border border-border/80 transition-colors"
+                  >
+                    + {sug}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -264,13 +483,13 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
             </label>
           </div>
 
-          {/* Guide Order List */}
+          {/* Guide Order List with Chapters & Steps */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-semibold text-foreground">
                 Guides Included in Binder ({orderedProjects.length})
               </label>
-              <span className="text-[11px] text-muted-foreground">Use arrows to adjust document chapter order</span>
+              <span className="text-[11px] text-muted-foreground">Adjust chapter sequence with arrows</span>
             </div>
 
             {orderedProjects.length === 0 ? (
@@ -281,7 +500,7 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
               <div className="divide-y divide-border border border-border rounded-lg max-h-48 overflow-y-auto bg-card">
                 {orderedProjects.map((p, idx) => (
                   <div key={p.id} className="p-2.5 px-3 flex items-center justify-between text-xs hover:bg-secondary/40">
-                    <div className="flex items-center gap-2.5 overflow-hidden pr-2">
+                    <div className="flex items-center gap-2 overflow-hidden pr-2">
                       <span className="font-mono text-[10px] text-muted-foreground w-4 text-center">
                         {idx + 1}
                       </span>
@@ -289,7 +508,18 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
                       <span className="text-[10px] font-mono px-1 rounded bg-secondary text-muted-foreground flex-shrink-0">
                         {p.category}
                       </span>
+                      {projectChapterMap[p.id] > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium border border-primary/20 flex-shrink-0">
+                          {projectChapterMap[p.id]} {projectChapterMap[p.id] === 1 ? 'Chapter' : 'Chapters'}
+                        </span>
+                      )}
+                      {projectStepMap[p.id] !== undefined && (
+                        <span className="text-[10px] text-muted-foreground font-mono flex-shrink-0">
+                          {projectStepMap[p.id]} steps
+                        </span>
+                      )}
                     </div>
+
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {projectVersionsMap[p.id] && projectVersionsMap[p.id].length > 0 ? (
                         <select
@@ -368,7 +598,7 @@ export const MasterBinderModal: React.FC<MasterBinderModalProps> = ({ isOpen, on
         {/* Footer Actions */}
         <div className="px-6 py-4 border-t border-border flex items-center justify-between bg-secondary/10">
           <span className="text-xs text-muted-foreground">
-            Annotations will be baked into all screenshots automatically
+            Annotations baked automatically &bull; Clean publication layout
           </span>
           <div className="flex items-center gap-2">
             <button

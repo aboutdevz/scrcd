@@ -105,11 +105,18 @@ async function runMasterBinderTests() {
     if (!code.includes('loading="eager"') || !code.includes('decoding="sync"')) {
       throw new Error('Master Binder HTML must contain loading="eager" and decoding="sync"');
     }
-    if (!code.includes('toc-leader')) {
-      throw new Error('Master Binder HTML must contain dotted leader TOC class');
+    if (code.includes('toc-step-action')) {
+      throw new Error('Master Binder HTML must not include toc-step-action (click, double click)');
+    }
+    if (!code.includes('step-chapter-banner') || !code.includes('toc-chapter-block')) {
+      throw new Error('Master Binder must support chapters in TOC and step flows');
+    }
+    if (!code.includes('cover-logo') || !code.includes('cover-roles-chips')) {
+      throw new Error('Master Binder must support logo, author, organization, and designated role chips on cover');
     }
 
     console.log('✅ [Master Binder HTML/PDF] Eager image loading and dotted leader TOC validated successfully.');
+    console.log('✅ [Master Binder Enhancements] Chapters, designated roles tagging, logo/author/company, and exclusion of action types validated successfully.');
   } catch (err) {
     console.error('❌ [Master Binder HTML/PDF] Failed:', err);
     process.exit(1);

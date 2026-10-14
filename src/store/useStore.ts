@@ -26,7 +26,7 @@ interface AppState {
   folders: Folder[];
   activeFolderId: string | null; // null = all, '__unorganized__' = unorganized, or folder id
   loadFolders: () => Promise<void>;
-  createFolder: (name: string, description?: string, color?: string) => Promise<Folder>;
+  createFolder: (name: string, description?: string, color?: string, targetRoles?: string[]) => Promise<Folder>;
   updateFolder: (folder: Folder) => Promise<void>;
   deleteFolder: (id: string, deleteGuides?: boolean) => Promise<void>;
   setActiveFolderId: (id: string | null) => void;
@@ -211,13 +211,14 @@ export const useStore = create<AppState>((set, get) => ({
     set({ folders });
   },
 
-  createFolder: async (name, description = '', color = '#2563eb') => {
+  createFolder: async (name, description = '', color = '#2563eb', targetRoles = []) => {
     const id = `folder_${Date.now()}`;
     const newFolder: Folder = {
       id,
       name: name.trim(),
       description: description.trim(),
       color,
+      targetRoles,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -745,5 +746,5 @@ export const useStore = create<AppState>((set, get) => ({
   isMasterBinderOpen: false,
   setIsMasterBinderOpen: (val) => set({ isMasterBinderOpen: val }),
   masterBinderFolderId: null,
-  setMasterBinderFolderId: (id) => set({ masterBinderFolderId: id, isMasterBinderOpen: Boolean(id) }),
+  setMasterBinderFolderId: (id) => set({ masterBinderFolderId: id, isMasterBinderOpen: true }),
 }));

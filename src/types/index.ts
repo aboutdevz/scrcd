@@ -17,6 +17,7 @@ export interface Folder {
   name: string;
   description?: string;
   color?: string; // Hex color code (e.g. #2563eb)
+  targetRoles?: string[]; // Designated roles for this handbook/folder (e.g. ['Administrator', 'DevOps'])
   createdAt: number;
   updatedAt: number;
 }

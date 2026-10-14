@@ -9,7 +9,9 @@ export interface MasterBinderOptions {
   subtitle?: string;
   author?: string;
   companyName?: string;
+  logoUrl?: string;
   accentColor?: string;
+  targetRoles?: string[];
   includeCoverPage: boolean;
   includeTableOfContents: boolean;
   format: 'pdf' | 'html' | 'docx';
@@ -76,6 +78,32 @@ async function urlToUint8Array(url: string): Promise<Uint8Array | null> {
   }
 }
 
+interface ChapterGroup {
+  title: string;
+  steps: Step[];
+}
+
+function groupStepsByChapter(steps: Step[]): ChapterGroup[] {
+  const chapters: ChapterGroup[] = [];
+  let currentChapter: ChapterGroup = { title: '', steps: [] };
+
+  for (const step of steps) {
+    const secTitle = (step.sectionTitle || '').trim();
+    if (secTitle && secTitle !== currentChapter.title) {
+      if (currentChapter.steps.length > 0) {
+        chapters.push(currentChapter);
+      }
+      currentChapter = { title: secTitle, steps: [step] };
+    } else {
+      currentChapter.steps.push(step);
+    }
+  }
+  if (currentChapter.steps.length > 0) {
+    chapters.push(currentChapter);
+  }
+  return chapters;
+}
+
 /**
  * Generates unified standalone Master Binder HTML with classic publication styling.
  */
@@ -88,15 +116,37 @@ export function generateMasterBinderHtml(
   const accent = options.accentColor || branding.accentColor || '#2563eb';
   const docTitle = options.title || (folder ? `${folder.name} Handbook` : 'Operations Master Handbook');
   const docSubtitle = options.subtitle || folder?.description || 'Standard Operating Procedures & Execution Guides';
-  const author = options.author || branding.author || 'System Operations Team';
-  const companyName = options.companyName || branding.companyName || 'Acme Corporation';
+  const logo = options.logoUrl || branding.logoUrl || guides.find((g) => g.project.logoUrl)?.project.logoUrl || '';
+  const author = options.author || branding.author || guides.find((g) => g.project.author)?.project.author || 'System Operations Team';
+  const companyName = options.companyName || branding.companyName || guides.find((g) => g.project.companyName)?.project.companyName || 'Acme Corporation';
+  const targetRoles = (options.targetRoles && options.targetRoles.length > 0
+    ? options.targetRoles
+    : folder?.targetRoles || []).filter(Boolean);
 
   const totalSteps = guides.reduce((acc, g) => acc + g.steps.length, 0);
 
-  // Table of contents rows with dotted leader
+  // Table of contents rows with dotted leader and chapter grouping
   const tocEntriesHtml = guides
     .map((g, gIdx) => {
       const gNum = gIdx + 1;
+      const chapters = groupStepsByChapter(g.steps);
+      const hasChapters = chapters.some((c) => c.title);
+
+      const renderStepsTOC = (stepList: Step[], isSubStep = false) => {
+        return stepList
+          .filter((s) => s.title && s.title.trim().length > 0)
+          .map(
+            (s) => `
+            <a href="#step-${s.id}" class="toc-row toc-row-step ${isSubStep ? 'toc-sub-step' : ''}">
+              <span class="toc-step-title"><span class="toc-step-num">${s.stepNumber}.</span> ${escapeHtml(s.title)}</span>
+              <span class="toc-leader"></span>
+              <span class="toc-step-num-pill">Step ${s.stepNumber}</span>
+            </a>
+          `
+          )
+          .join('\n');
+      };
+
       return `
       <div class="toc-guide-block">
         <a href="#guide-${g.project.id}" class="toc-row toc-row-guide">
@@ -105,18 +155,30 @@ export function generateMasterBinderHtml(
           <span class="toc-guide-meta">${g.steps.length} steps</span>
         </a>
         <div class="toc-step-list">
-          ${g.steps
-            .filter((s) => s.title && s.title.trim().length > 0)
-            .map(
-              (s) => `
-            <a href="#step-${s.id}" class="toc-row toc-row-step">
-              <span class="toc-step-title"><span class="toc-step-num">${s.stepNumber}.</span> ${escapeHtml(s.title)}</span>
-              <span class="toc-leader"></span>
-              <span class="toc-step-action">${s.actionType}</span>
-            </a>
-          `
-            )
-            .join('')}
+          ${
+            hasChapters
+              ? chapters
+                  .map((ch) => {
+                    return `
+                  <div class="toc-chapter-block">
+                    ${
+                      ch.title
+                        ? `<div class="toc-row toc-row-chapter">
+                            <span class="toc-chapter-title"><span class="toc-chapter-label">Chapter:</span> ${escapeHtml(ch.title)}</span>
+                            <span class="toc-leader"></span>
+                            <span class="toc-chapter-count">${ch.steps.length} steps</span>
+                          </div>`
+                        : ''
+                    }
+                    <div class="${ch.title ? 'toc-chapter-steps' : ''}">
+                      ${renderStepsTOC(ch.steps, Boolean(ch.title))}
+                    </div>
+                  </div>
+                `;
+                  })
+                  .join('\n')
+              : renderStepsTOC(g.steps, false)
+          }
         </div>
       </div>
       `;
@@ -127,6 +189,8 @@ export function generateMasterBinderHtml(
   const guidesContentHtml = guides
     .map((g, gIdx) => {
       const gNum = gIdx + 1;
+      let lastRenderedChapter = '';
+
       return `
       <section id="guide-${g.project.id}" class="guide-section">
         <div class="guide-header">
@@ -137,6 +201,13 @@ export function generateMasterBinderHtml(
           </div>
           <h2 class="guide-title">${escapeHtml(g.project.title)}</h2>
           ${g.project.description ? `<p class="guide-desc">${escapeHtml(g.project.description)}</p>` : ''}
+          
+          <div class="guide-author-bar">
+            <span>Author: <strong>${escapeHtml(g.project.author || author)}</strong></span>
+            <span class="author-bar-dot">&bull;</span>
+            <span>Organization: <strong>${escapeHtml(g.project.companyName || companyName)}</strong></span>
+          </div>
+
           ${
             g.project.tags && g.project.tags.length > 0
               ? `<div class="guide-tags">
@@ -149,7 +220,20 @@ export function generateMasterBinderHtml(
         <div class="steps-flow">
           ${g.steps
             .map((s) => {
+              const stepChapter = (s.sectionTitle || '').trim();
+              let chapterBannerHtml = '';
+              if (stepChapter && stepChapter !== lastRenderedChapter) {
+                lastRenderedChapter = stepChapter;
+                chapterBannerHtml = `
+                <div class="step-chapter-banner">
+                  <span class="chapter-badge">Chapter</span>
+                  <h4 class="chapter-title">${escapeHtml(stepChapter)}</h4>
+                </div>
+                `;
+              }
+
               return `
+            ${chapterBannerHtml}
             <div id="step-${s.id}" class="step-entry">
               <div class="step-meta">
                 <span class="step-num-pill">${s.stepNumber}</span>
@@ -219,13 +303,24 @@ export function generateMasterBinderHtml(
       border-top: 4px solid ${accent};
       padding-top: 24px;
     }
+    .cover-brand-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .cover-logo {
+      max-height: 64px;
+      max-width: 220px;
+      object-fit: contain;
+    }
     .cover-company {
       font-size: 13px;
       font-weight: 700;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: ${accent};
-      margin-bottom: 16px;
     }
     .cover-title {
       font-size: 34px;
@@ -240,6 +335,34 @@ export function generateMasterBinderHtml(
       color: #475569;
       max-width: 640px;
       line-height: 1.5;
+    }
+    .cover-roles-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 24px;
+      flex-wrap: wrap;
+    }
+    .cover-roles-label {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+    }
+    .cover-roles-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .cover-role-chip {
+      font-size: 11px;
+      font-weight: 600;
+      color: ${accent};
+      background: rgba(37, 99, 235, 0.08);
+      border: 1px solid rgba(37, 99, 235, 0.25);
+      padding: 3px 10px;
+      border-radius: 9999px;
     }
     .cover-stats {
       display: flex;
@@ -263,6 +386,57 @@ export function generateMasterBinderHtml(
       color: #64748b;
     }
 
+    /* Top Master Header (when Cover Page is disabled) */
+    .master-header {
+      margin-bottom: 48px;
+      padding-bottom: 28px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .master-header-brand {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+    }
+    .master-company {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: ${accent};
+      margin-bottom: 6px;
+    }
+    .master-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+      margin-bottom: 8px;
+    }
+    .master-subtitle {
+      font-size: 14px;
+      color: #64748b;
+      max-width: 640px;
+      line-height: 1.5;
+    }
+    .master-header-logo {
+      max-height: 52px;
+      max-width: 180px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+    .master-meta-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid #f1f5f9;
+      font-size: 12px;
+      color: #64748b;
+    }
+
     /* Table of Contents */
     .toc-section {
       margin-bottom: 60px;
@@ -277,13 +451,15 @@ export function generateMasterBinderHtml(
     .toc-title-heading {
       font-size: 20px;
       font-weight: 700;
-      letter-spacing: -0.01em;
+      letter-spacing: 0.05em;
       color: #0f172a;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
     }
     .toc-guide-block {
       margin-bottom: 24px;
+    }
+    .toc-chapter-block {
+      margin: 8px 0 6px 14px;
     }
     .toc-row {
       display: flex;
@@ -301,9 +477,42 @@ export function generateMasterBinderHtml(
       font-size: 14px;
       color: #0f172a;
     }
+    .toc-row-chapter {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1e293b;
+      padding: 3px 0;
+    }
+    .toc-chapter-title {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .toc-chapter-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: ${accent};
+      background: rgba(37, 99, 235, 0.08);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .toc-chapter-count {
+      font-size: 11px;
+      font-weight: 600;
+      color: #94a3b8;
+      font-variant-numeric: tabular-nums;
+    }
+    .toc-chapter-steps {
+      padding-left: 10px;
+    }
     .toc-row-step {
       font-size: 13px;
       color: #475569;
+      padding-left: 20px;
+    }
+    .toc-sub-step {
       padding-left: 20px;
     }
     .toc-leader {
@@ -318,14 +527,11 @@ export function generateMasterBinderHtml(
       color: #64748b;
       font-variant-numeric: tabular-nums;
     }
-    .toc-step-action {
+    .toc-step-num-pill {
       font-size: 11px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      color: #64748b;
-      text-transform: uppercase;
-      background: #f1f5f9;
-      padding: 1px 6px;
-      border-radius: 4px;
+      font-weight: 600;
+      color: #94a3b8;
+      font-variant-numeric: tabular-nums;
     }
     .toc-step-num {
       font-weight: 600;
@@ -384,6 +590,17 @@ export function generateMasterBinderHtml(
       color: #64748b;
       line-height: 1.5;
     }
+    .guide-author-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .author-bar-dot {
+      color: #cbd5e1;
+    }
     .guide-tags {
       display: flex;
       flex-wrap: wrap;
@@ -397,6 +614,32 @@ export function generateMasterBinderHtml(
       background: #f1f5f9;
       padding: 2px 8px;
       border-radius: 12px;
+    }
+
+    /* Chapter Banner in Steps */
+    .step-chapter-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 36px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1.5px solid #e2e8f0;
+    }
+    .chapter-badge {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #ffffff;
+      background-color: ${accent};
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .chapter-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
     }
 
     /* Steps Flow (Borderless, Clean) */
@@ -562,22 +805,60 @@ export function generateMasterBinderHtml(
         ? `
       <div class="cover-page">
         <div class="cover-top">
-          <div class="cover-company">${escapeHtml(companyName)}</div>
+          <div class="cover-brand-header">
+            ${logo ? `<img src="${logo}" alt="${escapeHtml(companyName)} Logo" class="cover-logo" />` : ''}
+            <div class="cover-company">${escapeHtml(companyName)}</div>
+          </div>
           <h1 class="cover-title">${escapeHtml(docTitle)}</h1>
           ${docSubtitle ? `<p class="cover-subtitle">${escapeHtml(docSubtitle)}</p>` : ''}
+          ${
+            targetRoles.length > 0
+              ? `
+            <div class="cover-roles-container">
+              <span class="cover-roles-label">Designated Roles:</span>
+              <div class="cover-roles-chips">
+                ${targetRoles.map((r) => `<span class="cover-role-chip">${escapeHtml(r)}</span>`).join('')}
+              </div>
+            </div>
+            `
+              : ''
+          }
           <div class="cover-stats">
             <span class="stat-badge">${guides.length} Standard Guides</span>
             <span class="stat-badge">${totalSteps} Total Steps</span>
           </div>
         </div>
         <div class="cover-footer">
-          <span>Author: ${escapeHtml(author)}</span>
+          <span>Author: <strong>${escapeHtml(author)}</strong></span>
+          <span>Organization: <strong>${escapeHtml(companyName)}</strong></span>
           <span>Generated on ${new Date().toLocaleDateString()}</span>
-          <span>SCRCD Master Publication</span>
         </div>
       </div>
       `
-        : ''
+        : `
+      <header class="master-header">
+        <div class="master-header-brand">
+          <div>
+            <div class="master-company">${escapeHtml(companyName)}</div>
+            <h1 class="master-title">${escapeHtml(docTitle)}</h1>
+            ${docSubtitle ? `<p class="master-subtitle">${escapeHtml(docSubtitle)}</p>` : ''}
+          </div>
+          ${logo ? `<img src="${logo}" alt="${escapeHtml(companyName)} Logo" class="master-header-logo" />` : ''}
+        </div>
+        <div class="master-meta-bar">
+          <div>Author: <strong>${escapeHtml(author)}</strong></div>
+          <div>Organization: <strong>${escapeHtml(companyName)}</strong></div>
+          <div>Date: <strong>${new Date().toLocaleDateString()}</strong></div>
+          ${
+            targetRoles.length > 0
+              ? `<div>Designated Roles: <strong>${escapeHtml(targetRoles.join(', '))}</strong></div>`
+              : ''
+          }
+          <div>Guides: <strong>${guides.length}</strong></div>
+          <div>Total Steps: <strong>${totalSteps}</strong></div>
+        </div>
+      </header>
+      `
     }
 
     ${
@@ -614,13 +895,42 @@ export async function exportMasterBinderDocx(
 ): Promise<Blob> {
   const docTitle = options.title || (folder ? `${folder.name} Handbook` : 'Operations Master Handbook');
   const docSubtitle = options.subtitle || folder?.description || '';
-  const author = options.author || branding.author || 'System Operations Team';
-  const companyName = options.companyName || branding.companyName || 'Acme Corporation';
+  const logo = options.logoUrl || branding.logoUrl || guides.find((g) => g.project.logoUrl)?.project.logoUrl || '';
+  const author = options.author || branding.author || guides.find((g) => g.project.author)?.project.author || 'System Operations Team';
+  const companyName = options.companyName || branding.companyName || guides.find((g) => g.project.companyName)?.project.companyName || 'Acme Corporation';
+  const targetRoles = (options.targetRoles && options.targetRoles.length > 0
+    ? options.targetRoles
+    : folder?.targetRoles || []).filter(Boolean);
 
   const docChildren: any[] = [];
 
   // Cover Page
   if (options.includeCoverPage) {
+    if (logo) {
+      const logoBytes = await urlToUint8Array(logo);
+      if (logoBytes && logoBytes.length > 0) {
+        try {
+          docChildren.push(
+            new Paragraph({
+              children: [
+                new ImageRun({
+                  data: logoBytes,
+                  type: 'png',
+                  transformation: {
+                    width: 180,
+                    height: 54,
+                  },
+                }),
+              ],
+              spacing: { before: 100, after: 300 },
+            })
+          );
+        } catch (e) {
+          console.warn('Could not attach logo to master binder docx cover:', e);
+        }
+      }
+    }
+
     docChildren.push(
       new Paragraph({
         children: [
@@ -631,7 +941,7 @@ export async function exportMasterBinderDocx(
             size: 24,
           }),
         ],
-        spacing: { before: 200, after: 400 },
+        spacing: { before: 150, after: 300 },
       }),
       new Paragraph({
         text: docTitle,
@@ -651,7 +961,29 @@ export async function exportMasterBinderDocx(
               size: 24,
             }),
           ],
-          spacing: { after: 400 },
+          spacing: { after: 300 },
+        })
+      );
+    }
+
+    if (targetRoles.length > 0) {
+      docChildren.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: 'Designated Roles: ',
+              bold: true,
+              color: '64748B',
+              size: 20,
+            }),
+            new TextRun({
+              text: targetRoles.join(', '),
+              bold: true,
+              color: '2563EB',
+              size: 20,
+            }),
+          ],
+          spacing: { after: 300 },
         })
       );
     }
@@ -660,14 +992,79 @@ export async function exportMasterBinderDocx(
       new Paragraph({
         children: [
           new TextRun({
-            text: `Author: ${author}  |  Guides: ${guides.length}  |  Date: ${new Date().toLocaleDateString()}`,
+            text: `Author: ${author}  |  Organization: ${companyName}  |  Guides: ${guides.length}  |  Date: ${new Date().toLocaleDateString()}`,
             color: '64748B',
             size: 20,
           }),
         ],
-        spacing: { before: 800, after: 400 },
+        spacing: { before: 600, after: 400 },
       }),
       new Paragraph({ children: [new PageBreak()] })
+    );
+  } else {
+    // Header banner when cover page is not included
+    if (logo) {
+      const logoBytes = await urlToUint8Array(logo);
+      if (logoBytes && logoBytes.length > 0) {
+        try {
+          docChildren.push(
+            new Paragraph({
+              children: [
+                new ImageRun({
+                  data: logoBytes,
+                  type: 'png',
+                  transformation: {
+                    width: 140,
+                    height: 42,
+                  },
+                }),
+              ],
+              spacing: { before: 100, after: 200 },
+            })
+          );
+        } catch {}
+      }
+    }
+
+    docChildren.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: companyName.toUpperCase(),
+            bold: true,
+            color: '2563EB',
+            size: 20,
+          }),
+        ],
+        spacing: { after: 100 },
+      }),
+      new Paragraph({
+        text: docTitle,
+        heading: HeadingLevel.TITLE,
+        spacing: { after: 150 },
+      })
+    );
+
+    if (docSubtitle) {
+      docChildren.push(
+        new Paragraph({
+          children: [new TextRun({ text: docSubtitle, italics: true, color: '64748B', size: 22 })],
+          spacing: { after: 150 },
+        })
+      );
+    }
+
+    docChildren.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `Author: ${author}  |  Organization: ${companyName}  |  Date: ${new Date().toLocaleDateString()}${targetRoles.length > 0 ? `  |  Roles: ${targetRoles.join(', ')}` : ''}`,
+            color: '64748B',
+            size: 18,
+          }),
+        ],
+        spacing: { after: 300 },
+      })
     );
   }
 
@@ -701,9 +1098,39 @@ export async function exportMasterBinderDocx(
               bold: true,
             }),
           ],
-          spacing: { after: 120 },
+          spacing: { after: 80 },
         })
       );
+
+      const chapters = groupStepsByChapter(g.steps);
+      const hasChapters = chapters.some((c) => c.title);
+      if (hasChapters) {
+        chapters.forEach((ch) => {
+          if (!ch.title) return;
+          docChildren.push(
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `    Chapter: ${ch.title}`,
+                  bold: true,
+                  color: '2563EB',
+                  size: 20,
+                }),
+                new TextRun({
+                  text: ` . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . `,
+                  color: 'CBD5E1',
+                }),
+                new TextRun({
+                  text: `${ch.steps.length} steps`,
+                  color: '64748B',
+                  size: 18,
+                }),
+              ],
+              spacing: { after: 60 },
+            })
+          );
+        });
+      }
     });
 
     docChildren.push(new Paragraph({ children: [new PageBreak()] }));
@@ -727,6 +1154,16 @@ export async function exportMasterBinderDocx(
       new Paragraph({
         text: g.project.title,
         heading: HeadingLevel.HEADING_1,
+        spacing: { after: 100 },
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `Author: ${g.project.author || author}  |  Organization: ${g.project.companyName || companyName}`,
+            color: '64748B',
+            size: 18,
+          }),
+        ],
         spacing: { after: 150 },
       })
     );
@@ -740,8 +1177,27 @@ export async function exportMasterBinderDocx(
       );
     }
 
-    // Process steps with baked images
+    // Process steps with baked images and chapters
+    let lastChapter = '';
     for (const step of g.steps) {
+      const stepChapter = (step.sectionTitle || '').trim();
+      if (stepChapter && stepChapter !== lastChapter) {
+        lastChapter = stepChapter;
+        docChildren.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: `CHAPTER: ${stepChapter.toUpperCase()}`,
+                bold: true,
+                color: '2563EB',
+                size: 22,
+              }),
+            ],
+            spacing: { before: 320, after: 120 },
+          })
+        );
+      }
+
       docChildren.push(
         new Paragraph({
           children: [
