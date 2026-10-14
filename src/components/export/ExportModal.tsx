@@ -31,19 +31,33 @@ interface ExportModalProps {
 type ExportType = 'pdf' | 'docx' | 'pptx' | 'html' | 'md' | 'json' | 'gif';
 
 export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
-  const { activeProject, steps, branding } = useStore();
+  const { activeProject, steps, branding, updateProject, updateBranding } = useStore();
   const [selectedFormat, setSelectedFormat] = useState<ExportType>('pdf');
   const [walkthroughMode, setWalkthroughMode] = useState<'gif' | 'webm'>('gif');
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportSuccess, setExportSuccess] = useState(false);
 
-  // Custom branding overrides
-  const [customAuthor, setCustomAuthor] = useState(branding.author);
-  const [customCompany, setCustomCompany] = useState(branding.companyName);
-  const [customAccent, setCustomAccent] = useState(branding.accentColor);
+  // Custom branding overrides initialized from project or global settings
+  const [customAuthor, setCustomAuthor] = useState(activeProject?.author || branding.author || '');
+  const [customCompany, setCustomCompany] = useState(activeProject?.companyName || branding.companyName || '');
+  const [customAccent, setCustomAccent] = useState(activeProject?.accentColor || branding.accentColor || '#2563eb');
   const [customLogoUrl, setCustomLogoUrl] = useState(activeProject?.logoUrl || branding.logoUrl || '');
   const [gifDuration, setGifDuration] = useState(1.2);
+
+  // Step Badge Display Options
+  const [includeActionBadges, setIncludeActionBadges] = useState(true);
+  const [includeAppBadges, setIncludeAppBadges] = useState(true);
+
+  // Keep state synchronized whenever modal is opened
+  React.useEffect(() => {
+    if (isOpen && activeProject) {
+      setCustomAuthor(activeProject.author || branding.author || '');
+      setCustomCompany(activeProject.companyName || branding.companyName || '');
+      setCustomAccent(activeProject.accentColor || branding.accentColor || '#2563eb');
+      setCustomLogoUrl(activeProject.logoUrl || branding.logoUrl || '');
+    }
+  }, [isOpen, activeProject?.id]);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -124,13 +138,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     };
 
     const sanitizedTitle = activeProject.title.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+    const exportOptions = {
+      includeActionBadges,
+      includeAppBadges,
+    };
+
+    // Persist branding customizations to active project and global branding
+    await updateProject({
+      ...activeProject,
+      author: customAuthor,
+      companyName: customCompany,
+      accentColor: customAccent,
+      logoUrl: customLogoUrl.trim() || undefined,
+      updatedAt: Date.now(),
+    });
+    updateBranding(mergedBranding);
 
     try {
       // Bake all annotations and hotspots into screenshots for export
       const exportSteps = selectedFormat === 'json' ? steps : await bakeStepsForExport(steps);
 
       if (selectedFormat === 'pdf') {
-        const htmlStr = generateHtml(activeProject, exportSteps, mergedBranding);
+        const htmlStr = generateHtml(activeProject, exportSteps, mergedBranding, exportOptions);
 
         if (isElectron()) {
           // Native Desktop printToPDF directly to user-chosen file
@@ -185,17 +214,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
           }
         }
       } else if (selectedFormat === 'html') {
-        const htmlStr = generateHtml(activeProject, exportSteps, mergedBranding);
+        const htmlStr = generateHtml(activeProject, exportSteps, mergedBranding, exportOptions);
         const blob = new Blob([htmlStr], { type: 'text/html' });
         downloadBlob(blob, `${sanitizedTitle}.html`);
       } else if (selectedFormat === 'docx') {
-        const blob = await generateDocx(activeProject, exportSteps, mergedBranding);
+        const blob = await generateDocx(activeProject, exportSteps, mergedBranding, exportOptions);
         downloadBlob(blob, `${sanitizedTitle}.docx`);
       } else if (selectedFormat === 'pptx') {
-        const blob = await generatePptx(activeProject, exportSteps, mergedBranding);
+        const blob = await generatePptx(activeProject, exportSteps, mergedBranding, exportOptions);
         downloadBlob(blob, `${sanitizedTitle}.pptx`);
       } else if (selectedFormat === 'md') {
-        const blob = await generateMarkdownZip(activeProject, exportSteps, mergedBranding);
+        const blob = await generateMarkdownZip(activeProject, exportSteps, mergedBranding, exportOptions);
         downloadBlob(blob, `${sanitizedTitle}_markdown.zip`);
       } else if (selectedFormat === 'json') {
         const jsonStr = exportProjectToJson(activeProject, steps);
@@ -378,6 +407,33 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                 </div>
               </div>
             </div>
+
+            {/* Step Badges & Element Options */}
+            {selectedFormat !== 'json' && selectedFormat !== 'gif' && (
+              <div className="pt-2 border-t border-border/50 space-y-2">
+                <label className="text-[11px] text-muted-foreground font-medium">Step Badges & Elements</label>
+                <div className="flex flex-wrap items-center gap-4 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeActionBadges}
+                      onChange={(e) => setIncludeActionBadges(e.target.checked)}
+                      className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
+                    />
+                    <span className="text-foreground">Include Action Badges (e.g. CLICK, TYPE)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeAppBadges}
+                      onChange={(e) => setIncludeAppBadges(e.target.checked)}
+                      className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
+                    />
+                    <span className="text-foreground">Include Application Badges (e.g. SCRCD)</span>
+                  </label>
+                </div>
+              </div>
+            )}
 
             {selectedFormat === 'gif' && (
               <div className="pt-3 border-t border-border/60 space-y-3">

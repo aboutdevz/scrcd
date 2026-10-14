@@ -68,7 +68,13 @@ export const EditorView: React.FC = () => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [stepToDelete, setStepToDelete] = useState<string | null>(null);
+  const [stepToMerge, setStepToMerge] = useState<{ s1: Step; s2: Step } | null>(null);
   const addStepMenuRef = useRef<HTMLDivElement>(null);
+
+  // Local input states to guarantee zero typing latency and prevent cursor jumping
+  const [titleInput, setTitleInput] = useState('');
+  const [sectionInput, setSectionInput] = useState('');
+  const [appInput, setAppInput] = useState('');
 
   // Resizable and Collapsible Sidebars
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
@@ -120,14 +126,17 @@ export const EditorView: React.FC = () => {
 
   const activeStep = steps.find((s) => s.id === activeStepId) || steps[0] || null;
 
-  // Reset history when switching active step
+  // Reset history and synchronize local input states when switching active step
   const lastActiveStepIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (activeStepId !== lastActiveStepIdRef.current) {
       lastActiveStepIdRef.current = activeStepId;
       setHistory({ past: [], future: [] });
     }
-  }, [activeStepId]);
+    setTitleInput(activeStep?.title || '');
+    setSectionInput(activeStep?.sectionTitle || '');
+    setAppInput(activeStep?.uiaAppName || '');
+  }, [activeStepId, activeStep?.title, activeStep?.sectionTitle, activeStep?.uiaAppName]);
 
   const colorPalette = ['#f59e0b', '#2563eb', '#ef4444', '#10b981', '#8b5cf6', '#ffffff'];
 
@@ -144,6 +153,7 @@ export const EditorView: React.FC = () => {
   ];
 
   const handleStepTitleChange = (newTitle: string) => {
+    setTitleInput(newTitle);
     if (!activeStep) return;
     updateStep({ ...activeStep, title: newTitle });
   };
@@ -485,10 +495,10 @@ export const EditorView: React.FC = () => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        mergeSteps(step.id, steps[idx + 1].id);
+                        setStepToMerge({ s1: step, s2: steps[idx + 1] });
                       }}
                       className="absolute right-2 bottom-2 p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Merge into next step"
+                      title="Merge with next step"
                     >
                       <Combine className="w-3 h-3" />
                     </button>
@@ -727,7 +737,7 @@ export const EditorView: React.FC = () => {
             <label className="text-xs font-semibold text-foreground">Step Title</label>
             <input
               type="text"
-              value={activeStep.title}
+              value={titleInput}
               onChange={(e) => handleStepTitleChange(e.target.value)}
               className="w-full px-3 py-1.5 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
             />
@@ -739,10 +749,14 @@ export const EditorView: React.FC = () => {
             <input
               type="text"
               placeholder="e.g. Phase 1: Authentication"
-              value={activeStep.sectionTitle || ''}
-              onChange={(e) =>
-                updateStep({ ...activeStep, sectionTitle: e.target.value || undefined })
-              }
+              value={sectionInput}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSectionInput(val);
+                if (activeStep) {
+                  updateStep({ ...activeStep, sectionTitle: val || undefined });
+                }
+              }}
               className="w-full px-3 py-1.5 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
             />
           </div>
@@ -795,10 +809,14 @@ export const EditorView: React.FC = () => {
                 <input
                   type="text"
                   placeholder="e.g. Google Chrome"
-                  value={activeStep.uiaAppName || ''}
-                  onChange={(e) =>
-                    updateStep({ ...activeStep, uiaAppName: e.target.value })
-                  }
+                  value={appInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setAppInput(val);
+                    if (activeStep) {
+                      updateStep({ ...activeStep, uiaAppName: val });
+                    }
+                  }}
                   className="px-2 py-0.5 rounded bg-secondary/70 border border-border text-foreground text-xs w-full text-right focus:outline-none focus:ring-1 focus:ring-primary/40"
                   title="Target Application (Editable)"
                 />
@@ -842,6 +860,27 @@ export const EditorView: React.FC = () => {
           }
         }}
         onCancel={() => setStepToDelete(null)}
+      />
+
+      {/* Merge Step Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(stepToMerge)}
+        title="Merge Steps"
+        message={
+          stepToMerge
+            ? `Merge Step ${stepToMerge.s1.stepNumber} ("${stepToMerge.s1.title || 'Untitled'}") with Step ${stepToMerge.s2.stepNumber} ("${stepToMerge.s2.title || 'Untitled'}")? All annotations and instructions from Step ${stepToMerge.s2.stepNumber} will be combined into Step ${stepToMerge.s1.stepNumber}, and Step ${stepToMerge.s2.stepNumber} will be removed. You can undo this change anytime with Ctrl+Z.`
+            : ''
+        }
+        confirmLabel="Merge Steps"
+        isDestructive={false}
+        onConfirm={async () => {
+          if (stepToMerge) {
+            const { s1, s2 } = stepToMerge;
+            setStepToMerge(null);
+            await mergeSteps(s1.id, s2.id);
+          }
+        }}
+        onCancel={() => setStepToMerge(null)}
       />
     </div>
   );

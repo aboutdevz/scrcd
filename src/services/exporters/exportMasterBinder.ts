@@ -106,6 +106,7 @@ export function generateMasterBinderHtml(
         </a>
         <div class="toc-step-list">
           ${g.steps
+            .filter((s) => s.title && s.title.trim().length > 0)
             .map(
               (s) => `
             <a href="#step-${s.id}" class="toc-row toc-row-step">

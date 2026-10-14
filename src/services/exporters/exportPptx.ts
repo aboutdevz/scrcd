@@ -1,17 +1,20 @@
 import pptxgen from 'pptxgenjs';
-import { Project, Step, BrandingProfile } from '@/types';
+import { Project, Step, BrandingProfile, DocumentExportOptions } from '@/types';
 import { htmlToPlainText } from '@/services/richText';
 
 export async function generatePptx(
   project: Project,
   steps: Step[],
-  branding: BrandingProfile
+  branding: BrandingProfile,
+  options?: DocumentExportOptions
 ): Promise<Blob> {
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE'; // 13.33 x 7.5 inches widescreen
 
-  const accent = branding.accentColor ? branding.accentColor.replace('#', '') : '2563EB';
-  const logoUrl = project.logoUrl || branding.logoUrl;
+  const accent = (branding.accentColor || project.accentColor || '#2563EB').replace('#', '');
+  const logoUrl = branding.logoUrl || project.logoUrl;
+  const author = branding.author || project.author || 'Author';
+  const companyName = branding.companyName || project.companyName || 'Organization';
   const version = project.version || '1.0.0';
 
   // 1. Title Slide
@@ -71,7 +74,7 @@ export async function generatePptx(
 
   // Footer Metadata
   titleSlide.addText(
-    `Version: ${version}   |   ${project.companyName || branding.companyName}   |   ${project.author || branding.author}   |   ${new Date(project.updatedAt).toLocaleDateString()}`,
+    `Version: ${version}   |   ${companyName}   |   ${author}   |   ${new Date(project.updatedAt).toLocaleDateString()}`,
     {
       x: 1.4,
       y: 5.6,
@@ -84,7 +87,8 @@ export async function generatePptx(
   );
 
   // 2. Agenda / Table of Contents Slide (if multiple steps)
-  if (steps.length > 2) {
+  const titledSteps = steps.filter((s) => s.title && s.title.trim().length > 0);
+  if (titledSteps.length > 2) {
     const agendaSlide = pptx.addSlide();
     agendaSlide.background = { color: 'F8FAFC' };
 
@@ -144,6 +148,7 @@ export async function generatePptx(
       }
 
       for (const s of ch.steps.slice(0, 4)) {
+        if (!s.title || !s.title.trim()) continue;
         agendaSlide.addText(`Step ${s.stepNumber}: ${s.title}`, {
           x: 1.2,
           y: currentY,
@@ -233,58 +238,66 @@ export async function generatePptx(
     });
 
     // App & Action Pill Badges inside card
-    slide.addText(`Target App:`, {
-      x: 0.85,
-      y: 1.4,
-      w: 1.1,
-      h: 0.35,
-      fontSize: 11,
-      bold: true,
-      color: '64748B',
-      fontFace: 'Arial',
-    });
-    slide.addText(`${step.uiaAppName || 'Application'}`, {
-      x: 1.95,
-      y: 1.4,
-      w: 2.2,
-      h: 0.35,
-      fontSize: 11,
-      bold: true,
-      color: '0F172A',
-      fontFace: 'Arial',
-    });
+    const showApp = options?.includeAppBadges !== false;
+    const showAction = options?.includeActionBadges !== false;
 
-    slide.addText(`Action:`, {
-      x: 0.85,
-      y: 1.8,
-      w: 1.1,
-      h: 0.35,
-      fontSize: 11,
-      bold: true,
-      color: '64748B',
-      fontFace: 'Arial',
-    });
+    if (showApp) {
+      slide.addText(`Target App:`, {
+        x: 0.85,
+        y: 1.4,
+        w: 1.1,
+        h: 0.35,
+        fontSize: 11,
+        bold: true,
+        color: '64748B',
+        fontFace: 'Arial',
+      });
+      slide.addText(`${step.uiaAppName || 'Application'}`, {
+        x: 1.95,
+        y: 1.4,
+        w: 2.2,
+        h: 0.35,
+        fontSize: 11,
+        bold: true,
+        color: '0F172A',
+        fontFace: 'Arial',
+      });
+    }
 
-    slide.addShape(pptx.ShapeType.roundRect, {
-      x: 1.95,
-      y: 1.8,
-      w: 1.4,
-      h: 0.32,
-      fill: { color: 'E2E8F0' },
-      line: { color: 'CBD5E1', width: 0.5 },
-    });
-    slide.addText(`${step.actionType.toUpperCase()}`, {
-      x: 1.95,
-      y: 1.8,
-      w: 1.4,
-      h: 0.32,
-      fontSize: 10,
-      bold: true,
-      color: '334155',
-      fontFace: 'Arial',
-      align: 'center',
-      valign: 'middle',
-    });
+    if (showAction) {
+      const actionY = showApp ? 1.8 : 1.4;
+      slide.addText(`Action:`, {
+        x: 0.85,
+        y: actionY,
+        w: 1.1,
+        h: 0.35,
+        fontSize: 11,
+        bold: true,
+        color: '64748B',
+        fontFace: 'Arial',
+      });
+
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 1.95,
+        y: actionY,
+        w: 1.4,
+        h: 0.32,
+        fill: { color: 'E2E8F0' },
+        line: { color: 'CBD5E1', width: 0.5 },
+      });
+      slide.addText(`${step.actionType.toUpperCase()}`, {
+        x: 1.95,
+        y: actionY,
+        w: 1.4,
+        h: 0.32,
+        fontSize: 10,
+        bold: true,
+        color: '334155',
+        fontFace: 'Arial',
+        align: 'center',
+        valign: 'middle',
+      });
+    }
 
     // Divider Line inside Card
     slide.addShape(pptx.ShapeType.line, {

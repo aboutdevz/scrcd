@@ -1,14 +1,21 @@
-import { Project, Step, BrandingProfile } from '@/types';
+import { Project, Step, BrandingProfile, DocumentExportOptions } from '@/types';
 import { formatCalloutHtml } from '@/services/richText';
 
 export function generateHtml(
   project: Project,
   steps: Step[],
-  branding: BrandingProfile
+  branding: BrandingProfile,
+  options?: DocumentExportOptions
 ): string {
-  const accent = branding.accentColor || '#2563eb';
-  const logo = project.logoUrl || branding.logoUrl;
+  const accent = branding.accentColor || project.accentColor || '#2563eb';
+  const logo = branding.logoUrl || project.logoUrl;
+  const author = branding.author || project.author || 'Author';
+  const companyName = branding.companyName || project.companyName || 'Organization';
   const version = project.version || '1.0.0';
+
+  const showAppTag = options?.includeAppBadges !== false;
+  const showActionTag = options?.includeActionBadges !== false;
+  const showTagsContainer = showAppTag || showActionTag;
 
   // Group steps by chapter/section
   interface ChapterGroup {
@@ -33,8 +40,10 @@ export function generateHtml(
   }
 
   // Render Table of Contents (Classic Dotted Leader Style)
+  // Only include steps that have a non-empty title (untitled steps are continuations)
+  const titledSteps = steps.filter((s) => s.title && s.title.trim().length > 0);
   const hasChapters = chapters.some((c) => c.title);
-  const tocHtml = steps.length > 1
+  const tocHtml = titledSteps.length > 1
     ? `
     <nav class="toc-container">
       <div class="toc-header">
@@ -44,8 +53,11 @@ export function generateHtml(
         ${
           hasChapters
             ? chapters
+                .filter((ch) => ch.title || ch.steps.some((s) => s.title && s.title.trim().length > 0))
                 .map(
-                  (ch) => `
+                  (ch) => {
+                    const chapterTitledSteps = ch.steps.filter((s) => s.title && s.title.trim().length > 0);
+                    return `
               <div class="toc-group">
                 ${
                   ch.title
@@ -57,7 +69,7 @@ export function generateHtml(
                     : ''
                 }
                 <div class="${ch.title ? 'toc-sub-steps' : ''}">
-                  ${ch.steps
+                  ${chapterTitledSteps
                     .map(
                       (s) => `
                     <a href="#step-${s.stepNumber}" class="toc-row">
@@ -68,10 +80,11 @@ export function generateHtml(
                     )
                     .join('\n')}
                 </div>
-              </div>`
+              </div>`;
+                  }
                 )
                 .join('\n')
-            : steps
+            : titledSteps
                 .map(
                   (s) => `
               <a href="#step-${s.stepNumber}" class="toc-row">
@@ -102,10 +115,15 @@ export function generateHtml(
         </label>
         <div class="step-meta">
           <h2 class="step-title">${escapeHtml(step.title)}</h2>
+          ${
+            showTagsContainer
+              ? `
           <div class="step-tags">
-            <span class="tag app-tag">${escapeHtml(step.uiaAppName || 'Application')}</span>
-            <span class="tag action-tag">${escapeHtml(step.actionType.toUpperCase())}</span>
-          </div>
+            ${showAppTag ? `<span class="tag app-tag">${escapeHtml(step.uiaAppName || 'Application')}</span>` : ''}
+            ${showActionTag ? `<span class="tag action-tag">${escapeHtml(step.actionType.toUpperCase())}</span>` : ''}
+          </div>`
+              : ''
+          }
         </div>
       </div>
       <div class="step-body">
@@ -600,8 +618,8 @@ export function generateHtml(
       </div>
       <div class="guide-meta">
         <div>Version: <strong>${escapeHtml(version)}</strong></div>
-        <div>Author: <strong>${escapeHtml(project.author || branding.author)}</strong></div>
-        <div>Organization: <strong>${escapeHtml(project.companyName || branding.companyName)}</strong></div>
+        <div>Author: <strong>${escapeHtml(author)}</strong></div>
+        <div>Organization: <strong>${escapeHtml(companyName)}</strong></div>
         <div>Total Steps: <strong>${steps.length}</strong></div>
         <div>Last Updated: <strong>${new Date(project.updatedAt).toLocaleDateString()}</strong></div>
       </div>

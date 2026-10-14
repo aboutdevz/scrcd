@@ -14,6 +14,7 @@ import {
   Layers,
   ChevronRight,
   Pencil,
+  Tag,
 } from 'lucide-react';
 
 interface DocumentPreviewModalProps {
@@ -41,6 +42,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   const [bakedSteps, setBakedSteps] = useState<Step[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('light');
+  const [showBadges, setShowBadges] = useState(true);
 
   // Inline badge editing
   const [editingAppStepId, setEditingAppStepId] = useState<string | null>(null);
@@ -188,6 +190,16 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             )}
           </button>
 
+          {/* Badge Visibility Toggle */}
+          <button
+            onClick={() => setShowBadges((prev) => !prev)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium transition-colors"
+            title="Toggle Action & App Badges"
+          >
+            <Tag className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{showBadges ? 'Hide Badges' : 'Show Badges'}</span>
+          </button>
+
           {/* Quick Print Button */}
           <button
             onClick={handlePrint}
@@ -299,7 +311,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             </div>
 
             {/* Chapter-based Table of Contents (Classic Dotted Leader Style) */}
-            {bakedSteps.length > 1 && (
+            {bakedSteps.filter((s) => s.title && s.title.trim().length > 0).length > 1 && (
               <div
                 className={`my-8 p-6 sm:p-8 rounded-xl border ${
                   previewTheme === 'dark'
@@ -319,7 +331,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
                 <div className="space-y-1.5 max-w-2xl mx-auto">
                   {chapters.some((c) => c.title) ? (
-                    chapters.map((ch, idx) => (
+                    chapters
+                      .filter((ch) => ch.title || ch.steps.some((s) => s.title && s.title.trim().length > 0))
+                      .map((ch, idx) => (
                       <div key={idx} className="space-y-1 pt-2 first:pt-0">
                         {ch.title && (
                           <button
@@ -351,14 +365,16 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                           </button>
                         )}
                         <div className={ch.title ? 'pl-4 space-y-1' : 'space-y-1'}>
-                          {ch.steps.map((s) => (
+                          {ch.steps
+                            .filter((s) => s.title && s.title.trim().length > 0)
+                            .map((s) => (
                             <button
                               key={s.id}
                               type="button"
                               onClick={() => scrollToStep(s.stepNumber)}
                               className={`w-full group flex items-baseline gap-2 py-1 px-2 rounded-md transition-colors text-left text-xs sm:text-sm ${
                                 previewTheme === 'dark'
-                                  ? 'hover:bg-slate-800/80 text-slate-300 hover:text-white'
+                                    ? 'hover:bg-slate-800/80 text-slate-300 hover:text-white'
                                   : 'hover:bg-slate-100 text-slate-700 hover:text-slate-900'
                               }`}
                             >
@@ -381,7 +397,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                       </div>
                     ))
                   ) : (
-                    bakedSteps.map((s) => (
+                    bakedSteps
+                      .filter((s) => s.title && s.title.trim().length > 0)
+                      .map((s) => (
                       <button
                         key={s.id}
                         type="button"
@@ -450,54 +468,56 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                       >
                         {step.title}
                       </h2>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        {/* Target Application Badge (Editable inline) */}
-                        {editingAppStepId === step.id ? (
-                          <input
-                            type="text"
-                            autoFocus
-                            value={editingAppText}
-                            onChange={(e) => setEditingAppText(e.target.value)}
-                            onBlur={() => handleSaveAppName(step)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleSaveAppName(step);
-                              if (e.key === 'Escape') setEditingAppStepId(null);
-                            }}
-                            className="text-[10px] font-semibold px-2 py-0.5 rounded border border-primary bg-background text-foreground focus:outline-none"
-                          />
-                        ) : (
+                      {showBadges && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          {/* Target Application Badge (Editable inline) */}
+                          {editingAppStepId === step.id ? (
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingAppText}
+                              onChange={(e) => setEditingAppText(e.target.value)}
+                              onBlur={() => handleSaveAppName(step)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveAppName(step);
+                                if (e.key === 'Escape') setEditingAppStepId(null);
+                              }}
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded border border-primary bg-background text-foreground focus:outline-none"
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingAppStepId(step.id);
+                                setEditingAppText(step.uiaAppName || 'Application');
+                              }}
+                              className={`group inline-flex items-center gap-1 text-[10px] font-semibold uppercase px-2 py-0.5 rounded transition-colors ${
+                                previewTheme === 'dark'
+                                  ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
+                                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                              }`}
+                              title="Click to edit application name"
+                            >
+                              <span>{step.uiaAppName || 'Application'}</span>
+                              <Pencil className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 text-primary transition-opacity" />
+                            </button>
+                          )}
+
+                          {/* Action Type Badge (Click to cycle / edit) */}
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditingAppStepId(step.id);
-                              setEditingAppText(step.uiaAppName || 'Application');
-                            }}
-                            className={`group inline-flex items-center gap-1 text-[10px] font-semibold uppercase px-2 py-0.5 rounded transition-colors ${
+                            onClick={() => handleCycleActionType(step)}
+                            className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded transition-all hover:scale-105 active:scale-95 ${
                               previewTheme === 'dark'
-                                ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
-                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                                ? 'bg-blue-950/80 text-blue-300 border border-blue-800/80'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
                             }`}
-                            title="Click to edit application name"
+                            title="Click to cycle action type (Click, Double Click, Navigation, etc.)"
                           >
-                            <span>{step.uiaAppName || 'Application'}</span>
-                            <Pencil className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 text-primary transition-opacity" />
+                            {step.actionType}
                           </button>
-                        )}
-
-                        {/* Action Type Badge (Click to cycle / edit) */}
-                        <button
-                          type="button"
-                          onClick={() => handleCycleActionType(step)}
-                          className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded transition-all hover:scale-105 active:scale-95 ${
-                            previewTheme === 'dark'
-                              ? 'bg-blue-950/80 text-blue-300 border border-blue-800/80'
-                              : 'bg-blue-50 text-blue-700 border border-blue-200'
-                          }`}
-                          title="Click to cycle action type (Click, Double Click, Navigation, etc.)"
-                        >
-                          {step.actionType}
-                        </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

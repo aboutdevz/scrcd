@@ -1,5 +1,5 @@
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun } from 'docx';
-import { Project, Step, BrandingProfile } from '@/types';
+import { Project, Step, BrandingProfile, DocumentExportOptions } from '@/types';
 
 /**
  * Strips XML 1.0 illegal control characters that cause Word to report
@@ -73,11 +73,14 @@ function sanitizeHexColor(hex: string | undefined): string {
 export async function generateDocx(
   project: Project,
   steps: Step[],
-  branding: BrandingProfile
+  branding: BrandingProfile,
+  options?: DocumentExportOptions
 ): Promise<Blob> {
   const sectionsContent: any[] = [];
-  const primaryColor = sanitizeHexColor(branding.accentColor);
-  const logoUrl = project.logoUrl || branding.logoUrl;
+  const primaryColor = sanitizeHexColor(branding.accentColor || project.accentColor);
+  const logoUrl = branding.logoUrl || project.logoUrl;
+  const author = branding.author || project.author || 'Author';
+  const companyName = branding.companyName || project.companyName || 'Organization';
 
   // Custom Logo Embedding in Header
   if (logoUrl) {
@@ -117,9 +120,9 @@ export async function generateDocx(
         new TextRun({ text: 'Version: ', bold: true }),
         new TextRun({ text: `${cleanXmlText(project.version || '1.0.0')}   |   ` }),
         new TextRun({ text: 'Author: ', bold: true }),
-        new TextRun({ text: `${cleanXmlText(project.author || branding.author || 'Author')}   |   ` }),
+        new TextRun({ text: `${cleanXmlText(author)}   |   ` }),
         new TextRun({ text: 'Organization: ', bold: true }),
-        new TextRun({ text: `${cleanXmlText(project.companyName || branding.companyName || 'Organization')}   |   ` }),
+        new TextRun({ text: `${cleanXmlText(companyName)}   |   ` }),
         new TextRun({ text: 'Date: ', bold: true }),
         new TextRun({ text: new Date(project.updatedAt || Date.now()).toLocaleDateString() }),
       ],
@@ -140,8 +143,9 @@ export async function generateDocx(
     );
   }
 
-  // Chapter-based Table of Contents
-  if (steps.length > 2) {
+  // Chapter-based Table of Contents (only include titled steps)
+  const titledSteps = steps.filter((s) => s.title && s.title.trim().length > 0);
+  if (titledSteps.length > 2) {
     sectionsContent.push(
       new Paragraph({
         text: 'Table of Contents',
@@ -152,6 +156,7 @@ export async function generateDocx(
 
     let lastSection = '';
     for (const step of steps) {
+      if (!step.title || !step.title.trim()) continue;
       if (step.sectionTitle && step.sectionTitle !== lastSection) {
         lastSection = step.sectionTitle;
         sectionsContent.push(
@@ -172,7 +177,7 @@ export async function generateDocx(
         new Paragraph({
           children: [
             new TextRun({ text: `    Step ${step.stepNumber}: `, bold: true, size: 20 }),
-            new TextRun({ text: `${cleanXmlText(step.title || 'Untitled Step')}`, size: 20 }),
+            new TextRun({ text: `${cleanXmlText(step.title)}`, size: 20 }),
           ],
           spacing: { after: 50 },
         })
@@ -232,18 +237,33 @@ export async function generateDocx(
     );
 
     // App & Action Info
-    if (step.uiaAppName || step.actionType) {
-      sectionsContent.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: 'Action: ', bold: true, size: 18 }),
-            new TextRun({ text: `${cleanXmlText(step.actionType.toUpperCase())} `, size: 18 }),
-            new TextRun({ text: '  |  Target App: ', bold: true, size: 18 }),
-            new TextRun({ text: `${cleanXmlText(step.uiaAppName || 'Application')}`, size: 18 }),
-          ],
-          spacing: { after: 140 },
-        })
-      );
+    const showAction = options?.includeActionBadges !== false;
+    const showApp = options?.includeAppBadges !== false;
+    if ((showAction && step.actionType) || (showApp && step.uiaAppName)) {
+      const tagChildren: TextRun[] = [];
+      if (showAction && step.actionType) {
+        tagChildren.push(
+          new TextRun({ text: 'Action: ', bold: true, size: 18 }),
+          new TextRun({ text: `${cleanXmlText(step.actionType.toUpperCase())} `, size: 18 })
+        );
+      }
+      if (showApp && (step.uiaAppName || !showAction)) {
+        if (tagChildren.length > 0) {
+          tagChildren.push(new TextRun({ text: '  |  ', size: 18 }));
+        }
+        tagChildren.push(
+          new TextRun({ text: 'Target App: ', bold: true, size: 18 }),
+          new TextRun({ text: `${cleanXmlText(step.uiaAppName || 'Application')}`, size: 18 })
+        );
+      }
+      if (tagChildren.length > 0) {
+        sectionsContent.push(
+          new Paragraph({
+            children: tagChildren,
+            spacing: { after: 140 },
+          })
+        );
+      }
     }
 
     // Step Instructions

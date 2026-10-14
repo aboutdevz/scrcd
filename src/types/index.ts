@@ -185,6 +185,11 @@ export interface BrandingProfile {
   footerText: string;
 }
 
+export interface DocumentExportOptions {
+  includeActionBadges?: boolean; // default true
+  includeAppBadges?: boolean;    // default true
+}
+
 export interface ExportSettings {
   format: 'pdf' | 'docx' | 'pptx' | 'html' | 'md' | 'json' | 'gif';
   includeTableOfContents: boolean;
@@ -192,6 +197,8 @@ export interface ExportSettings {
   gifDurationSeconds: number; // default 1.5s
   quality: number; // 0.85
   branding: BrandingProfile;
+  includeActionBadges?: boolean;
+  includeAppBadges?: boolean;
 }
 
 export interface DisplaySource {

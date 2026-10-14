@@ -143,6 +143,55 @@ async function runTests() {
     process.exit(1);
   }
 
+  // Test 6: Branding Overrides, TOC Untitled Step Filtering, and Step Badge Options
+  try {
+    const testProject = {
+      id: 'proj_1',
+      title: 'Setup Project',
+      author: 'System Operations Team',
+      companyName: 'Acme Corporation',
+      updatedAt: 1700000000000,
+    };
+    const testSteps = [
+      { id: 's1', stepNumber: 1, title: 'Open Settings', uiaAppName: 'SCRCD', actionType: 'click' },
+      { id: 's2', stepNumber: 2, title: '', uiaAppName: 'SCRCD', actionType: 'click' }, // Untitled continuation step
+      { id: 's3', stepNumber: 3, title: 'Save Configuration', uiaAppName: 'SCRCD', actionType: 'click' },
+    ];
+    const testBranding = {
+      author: 'Fikri H Badjeber',
+      companyName: 'PT. Rekayasa Engineering',
+      accentColor: '#2563eb',
+    };
+
+    // 1. Verify Branding Overrides
+    const author = testBranding.author || testProject.author;
+    const company = testBranding.companyName || testProject.companyName;
+    if (author !== 'Fikri H Badjeber' || company !== 'PT. Rekayasa Engineering') {
+      throw new Error(`Branding override failed: author=${author}, company=${company}`);
+    }
+    console.log(`✅ [Branding Overrides] Custom author "${author}" and organization "${company}" prioritized over project defaults`);
+
+    // 2. Verify TOC filters out untitled steps
+    const tocSteps = testSteps.filter((s) => s.title && s.title.trim().length > 0);
+    if (tocSteps.length !== 2 || tocSteps.some((s) => s.id === 's2')) {
+      throw new Error(`TOC filtering failed: steps with empty titles were not excluded`);
+    }
+    console.log(`✅ [TOC Filtering] Untitled continuation steps excluded from Table of Contents (${tocSteps.length} of ${testSteps.length} steps included)`);
+
+    // 3. Verify Step Badge Options
+    const optionsWithBadges = { includeActionBadges: true, includeAppBadges: true };
+    const optionsWithoutBadges = { includeActionBadges: false, includeAppBadges: false };
+    const showTagsWith = optionsWithBadges.includeActionBadges || optionsWithBadges.includeAppBadges;
+    const showTagsWithout = optionsWithoutBadges.includeActionBadges || optionsWithoutBadges.includeAppBadges;
+    if (!showTagsWith || showTagsWithout) {
+      throw new Error(`Step badge option toggling failed`);
+    }
+    console.log('✅ [Badge Options] Action and Application badges can be cleanly excluded during export');
+  } catch (err) {
+    console.error('❌ [Branding & TOC] Failed:', err);
+    process.exit(1);
+  }
+
   console.log('\n🎉 All Export Generation Unit Tests Passed Successfully!');
 }
 

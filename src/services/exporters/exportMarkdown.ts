@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { Project, Step, BrandingProfile } from '@/types';
+import { Project, Step, BrandingProfile, DocumentExportOptions } from '@/types';
 import { htmlToMarkdown } from '@/services/richText';
 
 async function urlToBlob(url: string): Promise<Blob> {
@@ -21,9 +21,12 @@ async function urlToBlob(url: string): Promise<Blob> {
 export function generateMarkdownText(
   project: Project,
   steps: Step[],
-  branding: BrandingProfile
+  branding: BrandingProfile,
+  options?: DocumentExportOptions
 ): string {
-  const logoUrl = project.logoUrl || branding.logoUrl;
+  const logoUrl = branding.logoUrl || project.logoUrl;
+  const author = branding.author || project.author || 'Author';
+  const companyName = branding.companyName || project.companyName || 'Organization';
   let md = '';
 
   if (logoUrl) {
@@ -37,16 +40,18 @@ export function generateMarkdownText(
   }
 
   md += `**Version**: ${project.version || '1.0.0'}  \n`;
-  md += `**Author**: ${project.author || branding.author}  \n`;
-  md += `**Organization**: ${project.companyName || branding.companyName}  \n`;
+  md += `**Author**: ${author}  \n`;
+  md += `**Organization**: ${companyName}  \n`;
   md += `**Date**: ${new Date(project.updatedAt).toLocaleDateString()}  \n\n`;
   md += `---\n\n`;
 
-  // Chapter-based Table of Contents
-  if (steps.length > 2) {
+  // Chapter-based Table of Contents (only include titled steps)
+  const titledSteps = steps.filter((s) => s.title && s.title.trim().length > 0);
+  if (titledSteps.length > 2) {
     md += `## Table of Contents\n\n`;
     let lastSection = '';
     for (const step of steps) {
+      if (!step.title || !step.title.trim()) continue;
       if (step.sectionTitle && step.sectionTitle !== lastSection) {
         lastSection = step.sectionTitle;
         md += `- **${lastSection}**\n`;
@@ -59,6 +64,9 @@ export function generateMarkdownText(
 
   md += `## Step-by-Step Instructions\n\n`;
 
+  const showApp = options?.includeAppBadges !== false;
+  const showAction = options?.includeActionBadges !== false;
+
   for (const step of steps) {
     if (step.sectionTitle) {
       md += `### ${step.sectionTitle}\n\n`;
@@ -66,8 +74,15 @@ export function generateMarkdownText(
 
     md += `<a id="step-${step.stepNumber}"></a>\n`;
     md += `#### Step ${step.stepNumber}: ${step.title}\n\n`;
-    md += `- **Application**: ${step.uiaAppName || 'Application'}\n`;
-    md += `- **Action**: \`${step.actionType.toUpperCase()}\`\n\n`;
+    if (showApp) {
+      md += `- **Application**: ${step.uiaAppName || 'Application'}\n`;
+    }
+    if (showAction) {
+      md += `- **Action**: \`${step.actionType.toUpperCase()}\`\n`;
+    }
+    if (showApp || showAction) {
+      md += `\n`;
+    }
 
     const mdInstructions = htmlToMarkdown(step.richInstructions);
     if (mdInstructions) {
@@ -87,18 +102,19 @@ export function generateMarkdownText(
 export async function generateMarkdownZip(
   project: Project,
   steps: Step[],
-  branding: BrandingProfile
+  branding: BrandingProfile,
+  options?: DocumentExportOptions
 ): Promise<Blob> {
   const zip = new JSZip();
 
   // 1. Add README.md
-  const mdContent = generateMarkdownText(project, steps, branding);
+  const mdContent = generateMarkdownText(project, steps, branding, options);
   zip.file('README.md', mdContent);
 
   // 2. Add images folder
   const imgFolder = zip.folder('images');
   if (imgFolder) {
-    const logoUrl = project.logoUrl || branding.logoUrl;
+    const logoUrl = branding.logoUrl || project.logoUrl;
     if (logoUrl) {
       try {
         const logoBlob = await urlToBlob(logoUrl);

@@ -375,11 +375,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updateStep: async (step) => {
-    await api.saveStep(step);
+    // Synchronously update in-memory state so controlled inputs and UI never lag or lose cursor
     set((state) => ({
       steps: state.steps.map((s) => (s.id === step.id ? step : s)),
       hasUnsavedChanges: true,
     }));
+    await api.saveStep(step);
   },
 
   deleteStep: async (id) => {
@@ -422,38 +423,101 @@ export const useStore = create<AppState>((set, get) => ({
     const s2 = steps.find((s) => s.id === step2Id);
     if (!s1 || !s2) return;
 
+    // Record past state for Undo (Ctrl+Z)
     set({
       stepHistoryPast: [...stepHistoryPast.slice(-10), steps],
       stepHistoryFuture: [],
     });
 
-    // Merge s2 into s1: copy s2 annotations, add a second hotspot on s1, combine instructions
-    const nextHotspotNumber = (s1.annotations.filter((a) => a.type === 'hotspot').length || 1) + 1;
-    const mergedAnnotations: AnnotationShape[] = [
-      ...s1.annotations,
-      {
+    // 1. Title combination:
+    const t1 = (s1.title || '').trim();
+    const t2 = (s2.title || '').trim();
+    let mergedTitle = t1;
+    if (t1 && t2 && t1.toLowerCase() !== t2.toLowerCase()) {
+      mergedTitle = `${t1} & ${t2}`;
+    } else if (!t1 && t2) {
+      mergedTitle = t2;
+    }
+
+    // 2. Rich instructions combination:
+    const r2 = (s2.richInstructions || '').trim();
+    let mergedInstructions = s1.richInstructions || '';
+    if (r2) {
+      mergedInstructions = mergedInstructions
+        ? `${mergedInstructions}${r2}`
+        : r2;
+    } else if (t2) {
+      mergedInstructions = mergedInstructions
+        ? `${mergedInstructions}<p>Then ${t2.toLowerCase()}.</p>`
+        : `<p>${t2}.</p>`;
+    }
+
+    // 3. Annotations & Hotspots combination:
+    const s1Hotspots = s1.annotations.filter((a) => a.type === 'hotspot');
+    let maxHotspotNum = s1Hotspots.reduce((max, h) => Math.max(max, (h as any).number || 0), 0);
+    if (maxHotspotNum === 0 && s1Hotspots.length > 0) {
+      maxHotspotNum = s1Hotspots.length;
+    }
+
+    const s2Hotspots = s2.annotations.filter((a) => a.type === 'hotspot');
+    const renumberedS2Hotspots = s2Hotspots.map((h, i) => ({
+      ...h,
+      id: `h_merged_${Date.now()}_${i}`,
+      number: maxHotspotNum + i + 1,
+    }));
+
+    const additionalHotspots: AnnotationShape[] = [];
+    if (s2Hotspots.length === 0 && (s2.clickX || s2.clickY)) {
+      additionalHotspots.push({
         id: `h_merged_${Date.now()}`,
         type: 'hotspot',
         x: s2.clickX,
         y: s2.clickY,
-        number: nextHotspotNumber,
+        number: maxHotspotNum + 1,
         color: '#2563eb',
         label: s2.uiaName,
-      },
-      ...s2.annotations.filter((a) => a.type !== 'hotspot'),
+        variant: 'badge',
+      } as AnnotationShape);
+    }
+
+    const nonHotspotS2 = s2.annotations
+      .filter((a) => a.type !== 'hotspot')
+      .map((a, i) => ({
+        ...a,
+        id: `shape_merged_${Date.now()}_${i}`,
+      }));
+
+    const mergedAnnotations: AnnotationShape[] = [
+      ...s1.annotations,
+      ...renumberedS2Hotspots,
+      ...additionalHotspots,
+      ...nonHotspotS2,
     ];
 
     const mergedStep: Step = {
       ...s1,
-      title: `${s1.title} & ${s2.title}`,
-      richInstructions: `${s1.richInstructions}<p>Then ${s2.title.toLowerCase()}.</p>`,
+      title: mergedTitle,
+      richInstructions: mergedInstructions,
       annotations: mergedAnnotations,
     };
 
-    await api.saveStep(mergedStep);
-    await api.deleteStep(activeProject.id, step2Id);
-    await get().loadSteps(activeProject.id);
-    set({ activeStepId: mergedStep.id, hasUnsavedChanges: true });
+    // Filter out step2, replace step1 with mergedStep, and renumber sequentially
+    const updatedSteps = steps
+      .filter((s) => s.id !== step2Id)
+      .map((s) => (s.id === step1Id ? mergedStep : s));
+    updatedSteps.forEach((s, idx) => {
+      s.stepNumber = idx + 1;
+    });
+
+    // Directly set state without calling loadSteps() to keep stepHistoryPast intact for Undo
+    set({
+      steps: updatedSteps,
+      activeStepId: mergedStep.id,
+      hasUnsavedChanges: true,
+      selectedShapeId: null,
+    });
+
+    await api.saveStepsBatch(activeProject.id, updatedSteps);
   },
 
   addManualStep: async () => {
