@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Threading;
 using System.Windows.Automation;
 
 public class Program
@@ -14,6 +15,14 @@ public class Program
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(POINT pt);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+
+    private const uint GA_ROOT = 2;
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
@@ -86,7 +95,7 @@ public class Program
     private const int SRCCOPY = 0x00CC0020;
     private const int CAPTUREBLT = 0x40000000;
 
-    private static void GetElementDetails(ref int x, ref int y, IntPtr fgHwnd, out string elementTitle, out string controlType, out string processName, out bool isPassword)
+    private static void GetElementDetails(ref int x, ref int y, IntPtr targetHwnd, out string elementTitle, out string controlType, out string processName, out bool isPassword)
     {
         elementTitle = "";
         controlType = "";
@@ -95,10 +104,10 @@ public class Program
 
         try
         {
-            if (fgHwnd != IntPtr.Zero)
+            if (targetHwnd != IntPtr.Zero)
             {
                 uint pid = 0;
-                GetWindowThreadProcessId(fgHwnd, out pid);
+                GetWindowThreadProcessId(targetHwnd, out pid);
                 if (pid != 0)
                 {
                     Process p = Process.GetProcessById((int)pid);
@@ -108,83 +117,104 @@ public class Program
         }
         catch {}
 
-        try
+        string outName = "";
+        string outCtrl = "";
+        bool outPass = false;
+        int localX = x;
+        int localY = y;
+        int resolvedX = x;
+        int resolvedY = y;
+
+        Thread uiaThread = new Thread(() =>
         {
-            AutomationElement el = null;
-            if (x > 0 || y > 0)
+            try
             {
-                try
-                {
-                    el = AutomationElement.FromPoint(new System.Windows.Point(x, y));
-                }
-                catch {}
-            }
-
-            if (el == null)
-            {
-                try
-                {
-                    el = AutomationElement.FocusedElement;
-                }
-                catch {}
-            }
-
-            if (el != null)
-            {
-                string name = el.Current.Name;
-                string ctrl = el.Current.ControlType != null ? el.Current.ControlType.ProgrammaticName : "";
-                if (!string.IsNullOrEmpty(ctrl) && ctrl.StartsWith("ControlType."))
-                {
-                    ctrl = ctrl.Substring("ControlType.".Length);
-                }
-
-                try
-                {
-                    isPassword = el.Current.IsPassword;
-                }
-                catch {}
-
-                // If coordinates were 0, center on the focused element bounds
-                if (x == 0 && y == 0)
+                AutomationElement el = null;
+                if (localX > 0 || localY > 0)
                 {
                     try
                     {
-                        System.Windows.Rect elRect = el.Current.BoundingRectangle;
-                        if (elRect != System.Windows.Rect.Empty && elRect.Width > 0 && elRect.Height > 0)
-                        {
-                            x = (int)(elRect.Left + elRect.Width / 2);
-                            y = (int)(elRect.Top + elRect.Height / 2);
-                        }
+                        el = AutomationElement.FromPoint(new System.Windows.Point(localX, localY));
                     }
                     catch {}
                 }
 
-                // If name is empty, traverse up to 3 parent levels to find a labeled container
-                if (string.IsNullOrEmpty(name))
+                if (el == null)
                 {
-                    TreeWalker walker = TreeWalker.ControlViewWalker;
-                    AutomationElement parent = walker.GetParent(el);
-                    int depth = 0;
-                    while (parent != null && depth < 3)
+                    try
                     {
-                        if (!string.IsNullOrEmpty(parent.Current.Name))
-                        {
-                            name = parent.Current.Name;
-                            break;
-                        }
-                        parent = walker.GetParent(parent);
-                        depth++;
+                        el = AutomationElement.FocusedElement;
                     }
+                    catch {}
                 }
 
-                elementTitle = name != null ? name.Trim() : "";
-                controlType = ctrl != null ? ctrl.Trim() : "";
+                if (el != null)
+                {
+                    string name = el.Current.Name;
+                    string ctrl = el.Current.ControlType != null ? el.Current.ControlType.ProgrammaticName : "";
+                    if (!string.IsNullOrEmpty(ctrl) && ctrl.StartsWith("ControlType."))
+                    {
+                        ctrl = ctrl.Substring("ControlType.".Length);
+                    }
+
+                    try
+                    {
+                        outPass = el.Current.IsPassword;
+                    }
+                    catch {}
+
+                    // If coordinates were 0, center on the focused element bounds
+                    if (localX == 0 && localY == 0)
+                    {
+                        try
+                        {
+                            System.Windows.Rect elRect = el.Current.BoundingRectangle;
+                            if (elRect != System.Windows.Rect.Empty && elRect.Width > 0 && elRect.Height > 0)
+                            {
+                                resolvedX = (int)(elRect.Left + elRect.Width / 2);
+                                resolvedY = (int)(elRect.Top + elRect.Height / 2);
+                            }
+                        }
+                        catch {}
+                    }
+
+                    // If name is empty, traverse up to 2 parent levels to find a labeled container
+                    if (string.IsNullOrEmpty(name))
+                    {
+                        TreeWalker walker = TreeWalker.ControlViewWalker;
+                        AutomationElement parent = walker.GetParent(el);
+                        int depth = 0;
+                        while (parent != null && depth < 2)
+                        {
+                            if (!string.IsNullOrEmpty(parent.Current.Name))
+                            {
+                                name = parent.Current.Name;
+                                break;
+                            }
+                            parent = walker.GetParent(parent);
+                            depth++;
+                        }
+                    }
+
+                    outName = name != null ? name.Trim() : "";
+                    outCtrl = ctrl != null ? ctrl.Trim() : "";
+                }
             }
-        }
-        catch
+            catch {}
+        });
+
+        uiaThread.IsBackground = true;
+        uiaThread.Start();
+        if (!uiaThread.Join(250))
         {
-            // Fallback gracefully on timeout or permission
+            try { uiaThread.Abort(); } catch {}
         }
+
+        elementTitle = outName;
+        controlType = outCtrl;
+        isPassword = outPass;
+        x = resolvedX;
+        y = resolvedY;
 
         if (!isPassword && !string.IsNullOrEmpty(elementTitle))
         {
@@ -252,39 +282,47 @@ public class Program
                 int.TryParse(args[3], out clickY);
             }
 
-            // 1. Get Foreground Window & Title
+            // 1. Resolve Target Window under the click point (< 0.1 ms)
+            IntPtr targetHwnd = IntPtr.Zero;
+            if (clickX > 0 || clickY > 0)
+            {
+                POINT clickPt = new POINT { x = clickX, y = clickY };
+                IntPtr hwndAtPt = WindowFromPoint(clickPt);
+                if (hwndAtPt != IntPtr.Zero)
+                {
+                    IntPtr rootHwnd = GetAncestor(hwndAtPt, GA_ROOT);
+                    targetHwnd = (rootHwnd != IntPtr.Zero) ? rootHwnd : hwndAtPt;
+                }
+            }
+            if (targetHwnd == IntPtr.Zero)
+            {
+                targetHwnd = GetForegroundWindow();
+            }
+
             string windowTitle = "Desktop";
-            IntPtr fgHwnd = GetForegroundWindow();
             RECT winRect = new RECT();
             bool hasValidWinRect = false;
 
-            if (fgHwnd != IntPtr.Zero)
+            if (targetHwnd != IntPtr.Zero)
             {
                 StringBuilder sb = new StringBuilder(512);
-                if (GetWindowText(fgHwnd, sb, 512) > 0)
+                if (GetWindowText(targetHwnd, sb, 512) > 0)
                 {
                     windowTitle = sb.ToString().Trim();
                 }
 
                 // Try DwmGetWindowAttribute for accurate borderless bounds
-                if (DwmGetWindowAttribute(fgHwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out winRect, Marshal.SizeOf(typeof(RECT))) == 0)
+                if (DwmGetWindowAttribute(targetHwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out winRect, Marshal.SizeOf(typeof(RECT))) == 0)
                 {
                     hasValidWinRect = (winRect.Right - winRect.Left > 150) && (winRect.Bottom - winRect.Top > 100);
                 }
-                if (!hasValidWinRect && GetWindowRect(fgHwnd, out winRect))
+                if (!hasValidWinRect && GetWindowRect(targetHwnd, out winRect))
                 {
                     hasValidWinRect = (winRect.Right - winRect.Left > 150) && (winRect.Bottom - winRect.Top > 100);
                 }
             }
 
-            // 2. Extract UI Automation details
-            string elementTitle = "";
-            string controlType = "";
-            string processName = "";
-            bool isPassword = false;
-            GetElementDetails(ref clickX, ref clickY, fgHwnd, out elementTitle, out controlType, out processName, out isPassword);
-
-            // 3. Determine Monitor Bounds for the Click
+            // 2. Resolve Monitor Bounds for the Click (< 0.1 ms)
             POINT pt = new POINT { x = clickX, y = clickY };
             IntPtr hMonitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
             MONITORINFO mi = new MONITORINFO();
@@ -295,7 +333,7 @@ public class Program
             int monW = monRect.Right - monRect.Left;
             int monH = monRect.Bottom - monRect.Top;
 
-            // 4. Determine Capture Bounding Box (cropX, cropY, cropW, cropH)
+            // 3. Determine Capture Bounding Box (< 0.01 ms)
             int cropX = 0;
             int cropY = 0;
             int cropW = 1920;
@@ -359,7 +397,7 @@ public class Program
             if (cropW <= 0) cropW = 1920;
             if (cropH <= 0) cropH = 1080;
 
-            // 5. BitBlt Screen DC to Memory DC
+            // 4. INSTANT BITBLT! (2-3 ms) - Capture and freeze screen pixels immediately
             IntPtr hdcScreen = GetDC(IntPtr.Zero);
             IntPtr hdcMem = CreateCompatibleDC(hdcScreen);
             IntPtr hBitmap = CreateCompatibleBitmap(hdcScreen, cropW, cropH);
@@ -371,7 +409,7 @@ public class Program
             DeleteDC(hdcMem);
             ReleaseDC(IntPtr.Zero, hdcScreen);
 
-            // 6. Save to disk
+            // 5. Save image to disk immediately
             using (Bitmap bmp = Image.FromHbitmap(hBitmap))
             {
                 string dir = Path.GetDirectoryName(outputPath);
@@ -383,6 +421,13 @@ public class Program
             }
 
             DeleteObject(hBitmap);
+
+            // 6. METADATA EXTRACTION PHASE (Runs AFTER screen is safely captured and saved)
+            string elementTitle = "";
+            string controlType = "";
+            string processName = "";
+            bool isPassword = false;
+            GetElementDetails(ref clickX, ref clickY, targetHwnd, out elementTitle, out controlType, out processName, out isPassword);
 
             string escapedTitle = EscapeJson(windowTitle);
             string escapedElement = EscapeJson(elementTitle);

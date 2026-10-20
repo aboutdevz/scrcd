@@ -24,6 +24,13 @@ let lastCaptureTime = 0;
 let currentProjectId = null;
 let recordedSteps = [];
 let hookProcess = null;
+let captureQueue = Promise.resolve();
+
+function enqueueCapture(task) {
+  const p = captureQueue.then(task, task);
+  captureQueue = p.catch(() => {});
+  return p;
+}
 
 function getAppIcon() {
   const candidates = [
@@ -309,11 +316,11 @@ async function commitTypingSession(options = {}) {
       console.warn('Failed to refresh screenshot after typing:', e);
     }
   } else {
-    await captureStep(targetX, targetY, false, null, null, 'type', {
+    await enqueueCapture(() => captureStep(targetX, targetY, false, null, null, 'type', {
       text: typedText,
       pressedEnter,
       pressedTab,
-    });
+    }));
   }
 }
 
@@ -401,11 +408,10 @@ async function captureWithDesktopCapturer(outputPath, clickX, clickY, config) {
 }
 
 async function captureStep(clickX, clickY, isSingleShot = false, overrideProjectId = null, overrideStepNumber = null, explicitAction = null, extraContext = null) {
-  if (isBusyCapturing) return null;
   if (!isSingleShot && (isRecordingPaused || !isRecording)) return null;
 
   const now = Date.now();
-  if (!isSingleShot && now - lastCaptureTime < 350) return null; // 350ms click debounce
+  if (!isSingleShot && now - lastCaptureTime < 150) return null; // 150ms switch debounce
   lastCaptureTime = now;
   isBusyCapturing = true;
 
@@ -586,12 +592,12 @@ function registerRecordingShortcuts() {
     globalShortcut.register('CommandOrControl+Shift+C', async () => {
       if (!isRecording || isRecordingPaused) return;
       const mouse = screen.getCursorScreenPoint();
-      await captureStep(mouse.x, mouse.y, false);
+      await enqueueCapture(() => captureStep(mouse.x, mouse.y, false));
     });
     globalShortcut.register('F10', async () => {
       if (!isRecording || isRecordingPaused) return;
       const mouse = screen.getCursorScreenPoint();
-      await captureStep(mouse.x, mouse.y, false);
+      await enqueueCapture(() => captureStep(mouse.x, mouse.y, false));
     });
   } catch (err) {
     console.warn('Failed to register recording global shortcuts:', err);
@@ -707,7 +713,7 @@ function startGlobalHook() {
             } else {
               const now = Date.now();
               if (now - lastCaptureTime > 600) {
-                captureStep(evt.x || 0, evt.y || 0, false, null, null, 'keypress');
+                enqueueCapture(() => captureStep(evt.x || 0, evt.y || 0, false, null, null, 'keypress'));
               }
             }
           } else if (evt.type === 'keypress' && evt.key === 'Tab') {
@@ -751,13 +757,13 @@ function startGlobalHook() {
               }
             }
 
-            // Suppress duplicate click (<1500ms, <15px)
-            if (dist < 15 && timeDiff < 1500) {
+            // Suppress duplicate click (<400ms, <15px)
+            if (dist < 15 && timeDiff < 400) {
               continue;
             }
 
             lastClickState = { x: evt.x, y: evt.y, time: now, windowTitle: '' };
-            captureStep(evt.x, evt.y);
+            enqueueCapture(() => captureStep(evt.x, evt.y));
           } else if (evt.type === 'window_focus' && evt.windowTitle) {
             if (typingSession.active && typingSession.text.trim().length > 0) {
               await commitTypingSession();
@@ -776,7 +782,7 @@ function startGlobalHook() {
               const now = Date.now();
               if (now - lastCaptureTime > 800) {
                 const mouse = screen.getCursorScreenPoint();
-                captureStep(mouse.x, mouse.y, false, null, null, 'navigation');
+                enqueueCapture(() => captureStep(mouse.x, mouse.y, false, null, null, 'navigation'));
               }
             }
           }
@@ -873,7 +879,7 @@ ipcMain.handle('manual-snapshot', async (_event, params = {}) => {
   const stepNum = params.stepNumber;
 
   if (isRecording) {
-    const step = await captureStep(mousePoint.x, mousePoint.y, false);
+    const step = await enqueueCapture(() => captureStep(mousePoint.x, mousePoint.y, false));
     return step;
   } else {
     // When idle/stopped: minimize main window, take clean snapshot, restore window, return step
@@ -882,7 +888,7 @@ ipcMain.handle('manual-snapshot', async (_event, params = {}) => {
     }
     await new Promise((r) => setTimeout(r, 280));
     const currentMouse = screen.getCursorScreenPoint();
-    const step = await captureStep(currentMouse.x, currentMouse.y, true, projId, stepNum);
+    const step = await enqueueCapture(() => captureStep(currentMouse.x, currentMouse.y, true, projId, stepNum));
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.restore();
       mainWindow.show();
@@ -896,6 +902,7 @@ ipcMain.handle('finish-recording', async () => {
   if (typingSession.active && typingSession.text.trim().length > 0) {
     await commitTypingSession();
   }
+  await captureQueue.catch(() => {});
   const stepsToReturn = [...recordedSteps];
   const finishedProjectId = currentProjectId;
 
