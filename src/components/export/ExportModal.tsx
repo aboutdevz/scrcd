@@ -468,7 +468,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
             </div>
 
             {/* Step Badges & Element Options */}
-            {selectedFormat !== 'json' && selectedFormat !== 'gif' && (
+            {!isVideoGuide && selectedFormat !== 'json' && selectedFormat !== 'gif' && (
               <div className="pt-2 border-t border-border/50 space-y-2">
                 <label className="text-[11px] text-muted-foreground font-medium">Step Badges & Elements</label>
                 <div className="flex flex-wrap items-center gap-4 text-xs">

@@ -903,9 +903,20 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                         {project.title}
                       </h3>
 
-                      {project.description?.trim() ? (
+                      {project.guideType === 'video' && project.videoThumbnailUrl && (
+                        <div className="relative w-full h-28 rounded-lg overflow-hidden border border-border bg-slate-950">
+                          <img
+                            src={project.videoThumbnailUrl}
+                            alt={project.title}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        </div>
+                      )}
+
+                      {project.description?.replace(/<[^>]*>/g, '').trim() ? (
                         <p className="text-xs text-muted-foreground line-clamp-2">
-                          {project.description}
+                          {project.description.replace(/<[^>]*>/g, '').trim()}
                         </p>
                       ) : null}
 

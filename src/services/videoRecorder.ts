@@ -318,6 +318,11 @@ export class VideoRecorderEngine {
           audio: Boolean(config.recordSystemAudio),
         });
       } catch (err) {
+        if (config.recordSystemAudio) {
+          try {
+            return await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          } catch {}
+        }
         console.warn('getDisplayMedia declined or unavailable, using synthetic video stream:', err);
       }
     }

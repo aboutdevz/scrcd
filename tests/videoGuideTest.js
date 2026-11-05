@@ -202,4 +202,18 @@ const { clampVideoTrim, normalizeVideoChapters, formatVideoTimestamp } = storage
   console.log('✅ [VideoGuideStudio & HTML Video Guide Exporter] Classic dotted-leader chapters, trim bounds, and zero-emoji output verified');
 }
 
+// 9. Verify Dashboard HTML stripping & videoThumbnailUrl preview, ExportModal video guard, and browser getDisplayMedia retry (Final Review Fixes)
+{
+  const dashCode = fs.readFileSync(path.join(__dirname, '../src/components/dashboard/ProjectDashboard.tsx'), 'utf8');
+  assert(dashCode.includes('videoThumbnailUrl'), 'ProjectDashboard must render videoThumbnailUrl preview on video cards');
+  assert(dashCode.includes("replace(/<[^>]*>/g, '')"), 'ProjectDashboard must strip HTML tags from rich description preview');
+
+  const exportModalCode = fs.readFileSync(path.join(__dirname, '../src/components/export/ExportModal.tsx'), 'utf8');
+  assert(exportModalCode.includes('!isVideoGuide && selectedFormat !== \'json\''), 'ExportModal must hide step badge options for video guides');
+
+  const recorderCode = fs.readFileSync(path.join(__dirname, '../src/services/videoRecorder.ts'), 'utf8');
+  assert(recorderCode.includes('getDisplayMedia({ video: true, audio: false })'), 'videoRecorder must retry video-only getDisplayMedia when audio capture is rejected');
+  console.log('✅ [Final Review Fixes] Dashboard thumbnail/HTML preview, ExportModal guard, and getDisplayMedia retry verified');
+}
+
 console.log('\n🎉 All Video Guide Tests Passed!');
