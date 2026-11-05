@@ -95,4 +95,48 @@ const { clampVideoTrim, normalizeVideoChapters, formatVideoTimestamp } = storage
   console.log('✅ [Electron Video IPC & Webcam Window] All IPC handlers and WebcamBubble verified');
 }
 
+// 6. Verify WebRTC & Web Audio Mixer Engine (Task 3 - Review Focus #1 & #4)
+{
+  const recorderPath = path.join(__dirname, '../src/services/videoRecorder.ts');
+  assert(fs.existsSync(recorderPath), 'src/services/videoRecorder.ts must exist');
+  const recorderCode = fs.readFileSync(recorderPath, 'utf8');
+  assert(recorderCode.includes('export function createAudioMixerGainState'), 'createAudioMixerGainState must be exported');
+  assert(recorderCode.includes('export class VideoRecorderEngine'), 'VideoRecorderEngine must be exported');
+  assert(recorderCode.includes('chromeMediaSource'), 'Electron desktopCapturer constraints must be supported');
+
+  const jsRecorderCode = stripTypeScriptTypes(recorderCode)
+    .replace(/import\s+.*?from\s+['"].*?['"];?/g, '')
+    .replace(/export\s+class/g, 'class')
+    .replace(/export\s+function/g, 'function')
+    .replace(/export\s+const/g, 'const');
+
+  const { createAudioMixerGainState } = new Function(
+    `${jsRecorderCode}\nreturn { createAudioMixerGainState };`
+  )();
+
+  const mixer = createAudioMixerGainState(true, true);
+  assert.strictEqual(mixer.micGain, 1, 'Initial mic gain is 1 when recordMic=true');
+  assert.strictEqual(mixer.systemGain, 1, 'Initial system audio gain is 1 when recordSystemAudio=true');
+  assert.strictEqual(mixer.setMicMuted(true), 0, 'Muting mic sets micGain to 0');
+  assert.strictEqual(mixer.micGain, 0, 'micGain is 0 when muted');
+  assert.strictEqual(mixer.systemGain, 1, 'systemGain remains 1 when mic is muted');
+  assert.strictEqual(mixer.setMicMuted(false), 1, 'Unmuting mic restores micGain to 1');
+  console.log('✅ [Web Audio Mixer State] Live mic mute/unmute isolates micGain while preserving systemGain');
+}
+
+// 7. Verify CaptureSetupModal and FloatingPill Video Mode UI (Task 4)
+{
+  const setupModalCode = fs.readFileSync(path.join(__dirname, '../src/components/recorder/CaptureSetupModal.tsx'), 'utf8');
+  assert(setupModalCode.includes("recordingMode"), 'CaptureSetupModal must support recordingMode');
+  assert(setupModalCode.includes("recordMic"), 'CaptureSetupModal must support microphone toggle');
+  assert(setupModalCode.includes("recordSystemAudio"), 'CaptureSetupModal must support system audio toggle');
+  assert(setupModalCode.includes("recordWebcam"), 'CaptureSetupModal must support webcam bubble toggle');
+
+  const pillCode = fs.readFileSync(path.join(__dirname, '../src/components/recorder/FloatingPill.tsx'), 'utf8');
+  assert(pillCode.includes("video-toggle-mic"), 'FloatingPill must support live microphone mute/unmute');
+  assert(pillCode.includes("video-toggle-webcam"), 'FloatingPill must support live webcam bubble toggle');
+  assert(pillCode.includes("formatVideoTimestamp"), 'FloatingPill must display live elapsed video timer');
+  console.log('✅ [CaptureSetupModal & FloatingPill] Video mode controls and audio/camera pickers verified');
+}
+
 console.log('\n🎉 All Video Guide Tests Passed!');
