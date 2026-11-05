@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Project, Step, AnnotationShape, AnnotationTool, BrandingProfile, Section, Folder, GuideVersion, VideoChapter } from '@/types';
 import { api, DEFAULT_CATEGORIES } from '@/services/api';
 import { clampVideoTrim, normalizeVideoChapters } from '@/services/videoStorage';
+import { videoRecorder } from '@/services/videoRecorder';
 
 interface AppState {
   // Navigation
@@ -660,6 +661,9 @@ export const useStore = create<AppState>((set, get) => ({
       micMuted: config?.recordMic === false,
       webcamEnabled: Boolean(config?.recordWebcam),
     });
+    if (isVideo) {
+      await videoRecorder.start(project.id, config);
+    }
     await api.startRecording(project.id, {
       ...config,
       existingStepsCount: currentSteps.length,
@@ -667,7 +671,31 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   stopRecording: async () => {
+    const wasVideo = get().recordingMode === 'video';
+    const activeProj = get().activeProject;
     set({ isRecording: false, isPaused: false });
+    if (wasVideo && activeProj) {
+      const res = await videoRecorder.stop();
+      if (res) {
+        await get().updateProject({
+          ...activeProj,
+          guideType: 'video',
+          videoPath: res.videoPath,
+          videoDuration: res.duration,
+          videoTrimStart: 0,
+          videoTrimEnd: res.duration,
+          videoThumbnailUrl: res.thumbnailUrl || activeProj.videoThumbnailUrl,
+          recordedMic: res.recordedMic,
+          recordedSystemAudio: res.recordedSystemAudio,
+          recordedWebcam: res.recordedWebcam,
+          updatedAt: Date.now(),
+        });
+      }
+      await api.stopRecording();
+      await get().selectProject(activeProj.id);
+      set({ currentView: 'editor' });
+      return;
+    }
     await api.stopRecording();
     const pid = get().activeProject?.id;
     if (pid) {
@@ -675,9 +703,22 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
-  setMicMuted: (muted) => set({ micMuted: muted }),
-  setWebcamEnabled: (enabled) => set({ webcamEnabled: enabled }),
+  togglePause: () => {
+    const nextPaused = !get().isPaused;
+    if (get().recordingMode === 'video') {
+      if (nextPaused) videoRecorder.pause();
+      else videoRecorder.resume();
+    }
+    set({ isPaused: nextPaused });
+  },
+  setMicMuted: (muted) => {
+    videoRecorder.setMicMuted(muted);
+    set({ micMuted: muted });
+  },
+  setWebcamEnabled: (enabled) => {
+    videoRecorder.setWebcamEnabled(enabled);
+    set({ webcamEnabled: enabled });
+  },
   toggleAppLock: () => set((state) => ({ appLock: !state.appLock })),
 
   updateVideoTrim: async (trimStart, trimEnd) => {

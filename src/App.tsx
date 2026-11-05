@@ -7,6 +7,7 @@ import { WebcamBubble } from '@/components/recorder/WebcamBubble';
 import { SplashScreen } from '@/components/common/SplashScreen';
 import { CommandPalette } from '@/components/common/CommandPalette';
 import { api, isElectron, getElectron } from '@/services/api';
+import { videoRecorder } from '@/services/videoRecorder';
 
 // Code-split heavy views and modals to keep initial boot bundle lean (<200 kB)
 const EditorView = lazy(() => import('@/components/editor/EditorView').then((m) => ({ default: m.EditorView })));
@@ -95,15 +96,70 @@ export const App: React.FC = () => {
         };
 
         const onCancelled = () => {
-          useStore.setState({ isRecording: false });
+          videoRecorder.cancel();
+          useStore.setState({ isRecording: false, isPaused: false });
+        };
+
+        const onVideoCommand = async (
+          _e: any,
+          cmd: { action: 'pause' | 'resume' | 'finish' | 'cancel'; projectId?: string }
+        ) => {
+          if (!cmd) return;
+          if (cmd.action === 'pause') {
+            videoRecorder.pause();
+            useStore.setState({ isPaused: true });
+          } else if (cmd.action === 'resume') {
+            videoRecorder.resume();
+            useStore.setState({ isPaused: false });
+          } else if (cmd.action === 'cancel') {
+            videoRecorder.cancel();
+            useStore.setState({ isRecording: false, isPaused: false });
+          } else if (cmd.action === 'finish') {
+            const res = await videoRecorder.stop();
+            const targetId = cmd.projectId || useStore.getState().activeProject?.id;
+            if (targetId && res) {
+              const proj = await api.getProject(targetId);
+              if (proj) {
+                await useStore.getState().updateProject({
+                  ...proj,
+                  guideType: 'video',
+                  videoPath: res.videoPath,
+                  videoDuration: res.duration,
+                  videoTrimStart: 0,
+                  videoTrimEnd: res.duration,
+                  videoThumbnailUrl: res.thumbnailUrl || proj.videoThumbnailUrl,
+                  recordedMic: res.recordedMic,
+                  recordedSystemAudio: res.recordedSystemAudio,
+                  recordedWebcam: res.recordedWebcam,
+                  updatedAt: Date.now(),
+                });
+              }
+              await selectProject(targetId);
+            }
+            useStore.setState({ isRecording: false, isPaused: false, currentView: 'editor' });
+          }
+        };
+
+        const onVideoMicState = (_e: any, muted: boolean) => {
+          useStore.getState().setMicMuted(Boolean(muted));
+        };
+
+        const onVideoWebcamState = (_e: any, enabled: boolean) => {
+          useStore.getState().setWebcamEnabled(Boolean(enabled));
         };
 
         electron.ipcRenderer.on('recording-finished', onFinished);
         electron.ipcRenderer.on('recording-cancelled', onCancelled);
+        electron.ipcRenderer.on('video-session-command', onVideoCommand);
+        electron.ipcRenderer.on('video-mic-state', onVideoMicState);
+        electron.ipcRenderer.on('video-webcam-state', onVideoWebcamState);
 
         return () => {
           electron.ipcRenderer.removeListener('recording-finished', onFinished);
           electron.ipcRenderer.removeListener('recording-cancelled', onCancelled);
+          electron.ipcRenderer.removeListener('video-session-command', onVideoCommand);
+          electron.ipcRenderer.removeListener('video-mic-state', onVideoMicState);
+          electron.ipcRenderer.removeListener('video-webcam-state', onVideoWebcamState);
         };
       }
     }
