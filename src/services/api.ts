@@ -1,5 +1,6 @@
-import { Project, Step, Section, BrandingProfile, Folder, GuideVersion } from '@/types';
+import { Project, Step, Section, BrandingProfile, Folder, GuideVersion, VideoSourceItem } from '@/types';
 import { generateMockScreenshot } from './mockData';
+import { deleteVideoFromStorage, resolveVideoUrl } from './videoStorage';
 
 // Default categories
 export const DEFAULT_CATEGORIES: string[] = ['SOP', 'Tutorial', 'Troubleshooting', 'Onboarding', 'General'];
@@ -201,6 +202,10 @@ export const api = {
   },
 
   async deleteProject(id: string): Promise<void> {
+    const existing = await this.getProject(id);
+    if (existing && (existing.guideType === 'video' || existing.videoPath)) {
+      await deleteVideoFromStorage(id, existing.videoPath);
+    }
     if (isTauri()) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
@@ -298,6 +303,55 @@ export const api = {
       displays: [{ id: 1, index: 1, isPrimary: true, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, label: 'Primary Monitor (1920×1080)' }],
       isMultiMonitor: false,
     };
+  },
+
+  async getVideoSources(): Promise<VideoSourceItem[]> {
+    if (isElectron()) {
+      const electron = getElectron();
+      if (electron && electron.ipcRenderer) {
+        try {
+          const sources = await electron.ipcRenderer.invoke('get-video-sources');
+          if (Array.isArray(sources)) return sources;
+        } catch (err) {
+          console.warn('Failed to fetch Electron video sources:', err);
+        }
+      }
+    }
+    return [
+      { id: 'screen:0:0', name: 'Entire Screen (Primary Display)', displayId: '1', type: 'screen' },
+      { id: 'window:1:0', name: 'Current Application Window', type: 'window' },
+    ];
+  },
+
+  async exportVideoFile(
+    sourcePathOrUrl: string,
+    defaultFilename: string
+  ): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> {
+    const sanitized = (defaultFilename || 'video_guide').replace(/\.webm$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_') + '.webm';
+    if (isElectron() && sourcePathOrUrl.startsWith('file://')) {
+      const electron = getElectron();
+      if (electron && electron.ipcRenderer) {
+        return await electron.ipcRenderer.invoke('export-video-file', {
+          sourcePath: sourcePathOrUrl,
+          defaultFilename: sanitized,
+        });
+      }
+    }
+
+    const resolved = await resolveVideoUrl(sourcePathOrUrl);
+    if (!resolved) {
+      return { success: false, error: 'Video file not found' };
+    }
+    if (typeof document !== 'undefined') {
+      const a = document.createElement('a');
+      a.href = resolved;
+      a.download = sanitized;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return { success: true, filePath: sanitized };
+    }
+    return { success: false, error: 'Download unavailable' };
   },
 
   async startRecording(projectId: string, config?: any): Promise<void> {

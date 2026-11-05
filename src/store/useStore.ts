@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { Project, Step, AnnotationShape, AnnotationTool, BrandingProfile, Section, Folder, GuideVersion } from '@/types';
+import { Project, Step, AnnotationShape, AnnotationTool, BrandingProfile, Section, Folder, GuideVersion, VideoChapter } from '@/types';
 import { api, DEFAULT_CATEGORIES } from '@/services/api';
+import { clampVideoTrim, normalizeVideoChapters } from '@/services/videoStorage';
 
 interface AppState {
   // Navigation
@@ -98,12 +99,23 @@ interface AppState {
   // Recording State
   isRecording: boolean;
   isPaused: boolean;
+  recordingMode: 'steps' | 'video';
+  micMuted: boolean;
+  webcamEnabled: boolean;
   appLock: boolean;
   startRecording: (config?: any) => Promise<void>;
   stopRecording: () => Promise<void>;
   togglePause: () => void;
+  setMicMuted: (muted: boolean) => void;
+  setWebcamEnabled: (enabled: boolean) => void;
   toggleAppLock: () => void;
   triggerManualSnapshot: () => Promise<void>;
+
+  // Video Guide Studio Actions
+  updateVideoTrim: (trimStart: number, trimEnd: number) => Promise<void>;
+  addVideoChapter: (timestamp: number, title: string, description?: string) => Promise<void>;
+  updateVideoChapter: (chapter: VideoChapter) => Promise<void>;
+  deleteVideoChapter: (chapterId: string) => Promise<void>;
 
   // Branding Profile
   branding: BrandingProfile;
@@ -614,15 +626,40 @@ export const useStore = create<AppState>((set, get) => ({
   // Recording
   isRecording: false,
   isPaused: false,
+  recordingMode: 'steps',
+  micMuted: false,
+  webcamEnabled: false,
   appLock: false,
 
   startRecording: async (config?: any) => {
+    const isVideo = config?.recordingMode === 'video';
     let project = get().activeProject;
-    if (!project) {
-      project = await get().createProject('New Captured Guide', 'SOP');
+    if (!project || isVideo || project.guideType === 'video') {
+      project = await get().createProject(
+        isVideo ? 'New Video Guide' : 'New Captured Guide',
+        isVideo ? 'Tutorial' : 'SOP'
+      );
+      if (isVideo) {
+        const updatedVideoProj: Project = {
+          ...project,
+          guideType: 'video',
+          recordedMic: config?.recordMic !== false,
+          recordedSystemAudio: Boolean(config?.recordSystemAudio),
+          recordedWebcam: Boolean(config?.recordWebcam),
+          videoChapters: [],
+        };
+        await get().updateProject(updatedVideoProj);
+        project = updatedVideoProj;
+      }
     }
     const currentSteps = get().steps;
-    set({ isRecording: true, isPaused: false });
+    set({
+      isRecording: true,
+      isPaused: false,
+      recordingMode: isVideo ? 'video' : 'steps',
+      micMuted: config?.recordMic === false,
+      webcamEnabled: Boolean(config?.recordWebcam),
+    });
     await api.startRecording(project.id, {
       ...config,
       existingStepsCount: currentSteps.length,
@@ -639,7 +676,66 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
+  setMicMuted: (muted) => set({ micMuted: muted }),
+  setWebcamEnabled: (enabled) => set({ webcamEnabled: enabled }),
   toggleAppLock: () => set((state) => ({ appLock: !state.appLock })),
+
+  updateVideoTrim: async (trimStart, trimEnd) => {
+    const project = get().activeProject;
+    if (!project) return;
+    const clamped = clampVideoTrim(trimStart, trimEnd, project.videoDuration || 60);
+    await get().updateProject({
+      ...project,
+      videoTrimStart: clamped.trimStart,
+      videoTrimEnd: clamped.trimEnd,
+      updatedAt: Date.now(),
+    });
+  },
+
+  addVideoChapter: async (timestamp, title, description) => {
+    const project = get().activeProject;
+    if (!project) return;
+    const newChapter: VideoChapter = {
+      id: `chap_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp,
+      title: title.trim() || 'Chapter',
+      description: description?.trim() || undefined,
+    };
+    const nextChapters = normalizeVideoChapters(
+      [...(project.videoChapters || []), newChapter],
+      project.videoDuration
+    );
+    await get().updateProject({
+      ...project,
+      videoChapters: nextChapters,
+      updatedAt: Date.now(),
+    });
+  },
+
+  updateVideoChapter: async (chapter) => {
+    const project = get().activeProject;
+    if (!project) return;
+    const nextChapters = normalizeVideoChapters(
+      (project.videoChapters || []).map((c) => (c.id === chapter.id ? chapter : c)),
+      project.videoDuration
+    );
+    await get().updateProject({
+      ...project,
+      videoChapters: nextChapters,
+      updatedAt: Date.now(),
+    });
+  },
+
+  deleteVideoChapter: async (chapterId) => {
+    const project = get().activeProject;
+    if (!project) return;
+    const nextChapters = (project.videoChapters || []).filter((c) => c.id !== chapterId);
+    await get().updateProject({
+      ...project,
+      videoChapters: nextChapters,
+      updatedAt: Date.now(),
+    });
+  },
 
   triggerManualSnapshot: async () => {
     const pid = get().activeProject?.id;

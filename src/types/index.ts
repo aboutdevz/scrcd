@@ -22,6 +22,23 @@ export interface Folder {
   updatedAt: number;
 }
 
+export type GuideType = 'steps' | 'video';
+
+export interface VideoChapter {
+  id: string;
+  timestamp: number;
+  title: string;
+  description?: string;
+}
+
+export interface VideoSourceItem {
+  id: string;
+  name: string;
+  displayId?: string;
+  thumbnailDataUrl?: string;
+  type: 'screen' | 'window';
+}
+
 export interface Project {
   id: string;
   folderId?: string | null;
@@ -34,6 +51,16 @@ export interface Project {
   companyName: string;
   accentColor: string;
   logoUrl?: string;
+  guideType?: GuideType;
+  videoPath?: string;
+  videoDuration?: number;
+  videoTrimStart?: number;
+  videoTrimEnd?: number;
+  videoChapters?: VideoChapter[];
+  videoThumbnailUrl?: string;
+  recordedMic?: boolean;
+  recordedSystemAudio?: boolean;
+  recordedWebcam?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -217,6 +244,13 @@ export interface CaptureConfig {
   displayId?: number;
   monitorBounds?: { x: number; y: number; width: number; height: number };
   hotspotVariant: 'spotlight' | 'badge';
+  recordingMode?: 'steps' | 'video';
+  recordMic?: boolean;
+  micDeviceId?: string;
+  recordSystemAudio?: boolean;
+  recordWebcam?: boolean;
+  webcamDeviceId?: string;
+  windowSourceId?: string;
 }
 
 export type AiProvider = 'openai' | 'gemini' | 'anthropic' | 'custom';
