@@ -16,9 +16,14 @@ app.commandLine.appendSwitch('disable-component-update');
 
 let mainWindow = null;
 let pillWindow = null;
+let webcamWindow = null;
 
 let isRecording = false;
+let isVideoRecording = false;
 let isRecordingPaused = false;
+let videoMicMuted = false;
+let videoWebcamEnabled = false;
+let videoWebcamDeviceId = '';
 let isBusyCapturing = false;
 let lastCaptureTime = 0;
 let currentProjectId = null;
@@ -166,6 +171,9 @@ function createPillWindow() {
   pillWindow.once('ready-to-show', () => {
     pillWindow.show();
     pillWindow.setAlwaysOnTop(true, 'screen-saver');
+    pillWindow.webContents.send('pill-recording-mode', isVideoRecording ? 'video' : 'steps');
+    pillWindow.webContents.send('pill-mic-state', videoMicMuted);
+    pillWindow.webContents.send('pill-webcam-state', videoWebcamEnabled);
     pillWindow.webContents.send('pill-step-count', recordedSteps.length);
     pillWindow.webContents.send('pill-scope-change', currentCaptureConfig.scope || 'monitor');
   });
@@ -175,16 +183,82 @@ function createPillWindow() {
   });
 }
 
+function createWebcamWindow(deviceId = '') {
+  if (webcamWindow && !webcamWindow.isDestroyed()) {
+    webcamWindow.show();
+    webcamWindow.setAlwaysOnTop(true, 'screen-saver');
+    return;
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { height } = primaryDisplay.workAreaSize;
+  const bubbleSize = 164;
+
+  webcamWindow = new BrowserWindow({
+    width: bubbleSize,
+    height: bubbleSize,
+    x: 32,
+    y: Math.max(32, height - bubbleSize - 32),
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      webSecurity: false,
+      spellcheck: false,
+      backgroundThrottling: false,
+    },
+  });
+
+  // Keep webcam bubble visible in screen capture so desktopCapturer records it like Loom
+  webcamWindow.setContentProtection(false);
+
+  const hashParam = deviceId ? `webcam?deviceId=${encodeURIComponent(deviceId)}` : 'webcam';
+  const distPath = path.join(__dirname, '../dist/index.html');
+  if (fs.existsSync(distPath)) {
+    webcamWindow.loadFile(distPath, { hash: hashParam });
+  } else {
+    webcamWindow.loadURL(`http://localhost:1420/#${hashParam}`);
+  }
+
+  webcamWindow.once('ready-to-show', () => {
+    if (webcamWindow && !webcamWindow.isDestroyed()) {
+      webcamWindow.show();
+      webcamWindow.setAlwaysOnTop(true, 'screen-saver');
+    }
+  });
+
+  webcamWindow.on('closed', () => {
+    webcamWindow = null;
+  });
+}
+
 function stopRecordingSession() {
   isRecording = false;
+  isVideoRecording = false;
   isRecordingPaused = false;
   cancelTypingSession();
   unregisterRecordingShortcuts();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.webContents.setBackgroundThrottling(true);
+    } catch (e) {}
+  }
   if (hookProcess) {
     try {
       hookProcess.kill();
     } catch (e) {}
     hookProcess = null;
+  }
+  if (webcamWindow && !webcamWindow.isDestroyed()) {
+    webcamWindow.close();
+    webcamWindow = null;
   }
   if (pillWindow && !pillWindow.isDestroyed()) {
     pillWindow.close();
@@ -825,6 +899,122 @@ ipcMain.handle('get-capture-sources', async () => {
   };
 });
 
+ipcMain.handle('get-video-sources', async () => {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 320, height: 180 },
+    });
+    return sources
+      .filter((s) => !s.name.startsWith('SCRCD'))
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        displayId: s.display_id ? String(s.display_id) : undefined,
+        thumbnailDataUrl: s.thumbnail && !s.thumbnail.isEmpty() ? s.thumbnail.toDataURL() : undefined,
+        type: s.id.startsWith('screen:') ? 'screen' : 'window',
+      }));
+  } catch (err) {
+    console.warn('get-video-sources error:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('get-pill-video-state', () => {
+  return {
+    recordingMode: isVideoRecording ? 'video' : 'steps',
+    micMuted: videoMicMuted,
+    webcamEnabled: videoWebcamEnabled,
+    isPaused: isRecordingPaused,
+  };
+});
+
+ipcMain.handle('video-toggle-mic', () => {
+  videoMicMuted = !videoMicMuted;
+  if (pillWindow && !pillWindow.isDestroyed()) {
+    pillWindow.webContents.send('pill-mic-state', videoMicMuted);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('video-mic-state', videoMicMuted);
+  }
+  return videoMicMuted;
+});
+
+ipcMain.handle('video-toggle-webcam', () => {
+  videoWebcamEnabled = !videoWebcamEnabled;
+  if (videoWebcamEnabled) {
+    createWebcamWindow(videoWebcamDeviceId);
+  } else if (webcamWindow && !webcamWindow.isDestroyed()) {
+    webcamWindow.close();
+    webcamWindow = null;
+  }
+  if (pillWindow && !pillWindow.isDestroyed()) {
+    pillWindow.webContents.send('pill-webcam-state', videoWebcamEnabled);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('video-webcam-state', videoWebcamEnabled);
+  }
+  return videoWebcamEnabled;
+});
+
+ipcMain.handle('save-video-file', async (_event, { projectId, buffer }) => {
+  try {
+    const videosDir = path.join(app.getPath('userData'), 'videos');
+    if (!fs.existsSync(videosDir)) {
+      fs.mkdirSync(videosDir, { recursive: true });
+    }
+    const safeProjId = String(projectId || 'guide').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = path.join(videosDir, `video_${safeProjId}_${Date.now()}.webm`);
+    const nodeBuf = Buffer.from(buffer);
+    await fs.promises.writeFile(filePath, nodeBuf);
+    return {
+      success: true,
+      videoPath: 'file:///' + filePath.replace(/\\/g, '/'),
+    };
+  } catch (err) {
+    console.error('Failed to save video file:', err);
+    return { success: false, error: err.message || String(err) };
+  }
+});
+
+ipcMain.handle('delete-video-file', async (_event, { videoPath }) => {
+  try {
+    if (!videoPath || !videoPath.startsWith('file://')) return { success: false };
+    const localPath = path.normalize(videoPath.replace(/^file:\/\/\/?/, ''));
+    const videosDir = path.normalize(path.join(app.getPath('userData'), 'videos'));
+    if (localPath.startsWith(videosDir) && fs.existsSync(localPath)) {
+      await fs.promises.unlink(localPath);
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message || String(err) };
+  }
+});
+
+ipcMain.handle('export-video-file', async (_event, { sourcePath, defaultFilename }) => {
+  try {
+    const rawName = (defaultFilename || 'video_guide').replace(/\.webm$/i, '');
+    const sanitized = rawName.replace(/[^a-zA-Z0-9_-]/g, '_') + '.webm';
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow || undefined, {
+      title: 'Export Video Guide (.webm)',
+      defaultPath: path.join(app.getPath('videos') || app.getPath('documents'), sanitized),
+      filters: [{ name: 'WebM Video (*.webm)', extensions: ['webm'] }],
+    });
+    if (canceled || !filePath) {
+      return { success: false, canceled: true };
+    }
+    const localSource = path.normalize(String(sourcePath || '').replace(/^file:\/\/\/?/, ''));
+    if (!fs.existsSync(localSource)) {
+      return { success: false, error: 'Source video file does not exist on disk' };
+    }
+    await fs.promises.copyFile(localSource, filePath);
+    return { success: true, filePath };
+  } catch (err) {
+    console.error('Failed to export video file:', err);
+    return { success: false, error: err.message || String(err) };
+  }
+});
+
 ipcMain.handle('start-recording', async (_event, { projectId, config }) => {
   currentProjectId = projectId;
   currentCaptureConfig = config || { scope: 'window', hotspotVariant: 'spotlight' };
@@ -832,28 +1022,48 @@ ipcMain.handle('start-recording', async (_event, { projectId, config }) => {
   recordedSteps = [];
   isRecordingPaused = false;
   isRecording = true;
+  isVideoRecording = Boolean(config && config.recordingMode === 'video');
+  videoMicMuted = Boolean(config && config.recordMic === false);
+  videoWebcamEnabled = Boolean(config && config.recordWebcam);
+  videoWebcamDeviceId = (config && config.webcamDeviceId) ? String(config.webcamDeviceId) : '';
 
-  // Minimize main window so user sees their desktop/apps
   if (mainWindow && !mainWindow.isDestroyed()) {
+    if (isVideoRecording) {
+      try {
+        mainWindow.webContents.setBackgroundThrottling(false);
+      } catch (e) {}
+    }
     mainWindow.minimize();
   }
 
   // Create real OS-level floating pill window
   createPillWindow();
 
-  // Start global mouse hook process
-  startGlobalHook();
+  if (isVideoRecording) {
+    if (videoWebcamEnabled) {
+      createWebcamWindow(videoWebcamDeviceId);
+    }
+  } else {
+    // Start global mouse hook process for step-by-step mode only
+    startGlobalHook();
+  }
 
   return { success: true };
 });
 
 ipcMain.handle('pause-recording', async () => {
-  if (typingSession.active && typingSession.text.trim().length > 0) {
+  if (!isVideoRecording && typingSession.active && typingSession.text.trim().length > 0) {
     await commitTypingSession();
   }
   isRecordingPaused = !isRecordingPaused;
   if (pillWindow && !pillWindow.isDestroyed()) {
     pillWindow.webContents.send('pill-pause-state', isRecordingPaused);
+  }
+  if (isVideoRecording && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('video-session-command', {
+      action: isRecordingPaused ? 'pause' : 'resume',
+      projectId: currentProjectId,
+    });
   }
   return isRecordingPaused;
 });
@@ -899,12 +1109,16 @@ ipcMain.handle('manual-snapshot', async (_event, params = {}) => {
 });
 
 ipcMain.handle('finish-recording', async () => {
-  if (typingSession.active && typingSession.text.trim().length > 0) {
-    await commitTypingSession();
-  }
-  await captureQueue.catch(() => {});
-  const stepsToReturn = [...recordedSteps];
+  const wasVideoRecording = isVideoRecording;
   const finishedProjectId = currentProjectId;
+
+  if (!wasVideoRecording) {
+    if (typingSession.active && typingSession.text.trim().length > 0) {
+      await commitTypingSession();
+    }
+    await captureQueue.catch(() => {});
+  }
+  const stepsToReturn = [...recordedSteps];
 
   stopRecordingSession();
 
@@ -912,23 +1126,39 @@ ipcMain.handle('finish-recording', async () => {
     mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
-    mainWindow.webContents.send('recording-finished', {
-      projectId: finishedProjectId,
-      steps: stepsToReturn,
-    });
+    if (wasVideoRecording) {
+      mainWindow.webContents.send('video-session-command', {
+        action: 'finish',
+        projectId: finishedProjectId,
+      });
+    } else {
+      mainWindow.webContents.send('recording-finished', {
+        projectId: finishedProjectId,
+        steps: stepsToReturn,
+      });
+    }
   }
 
   return { success: true, count: stepsToReturn.length };
 });
 
 ipcMain.handle('cancel-recording', async () => {
+  const wasVideoRecording = isVideoRecording;
+  const cancelledProjectId = currentProjectId;
   stopRecordingSession();
 
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
-    mainWindow.webContents.send('recording-cancelled');
+    if (wasVideoRecording) {
+      mainWindow.webContents.send('video-session-command', {
+        action: 'cancel',
+        projectId: cancelledProjectId,
+      });
+    } else {
+      mainWindow.webContents.send('recording-cancelled');
+    }
   }
 
   return { success: true };

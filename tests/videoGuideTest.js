@@ -78,4 +78,21 @@ const { clampVideoTrim, normalizeVideoChapters, formatVideoTimestamp } = storage
   console.log('✅ [Project Deletion Cleanup] api.deleteProject invokes deleteVideoFromStorage');
 }
 
-console.log('\n🎉 All Video Guide Task 1 Tests Passed!');
+// 5. Verify Electron main.cjs video IPC handlers & floating webcam window (Task 2)
+{
+  const mainCode = fs.readFileSync(path.join(__dirname, '../electron/main.cjs'), 'utf8');
+  assert(mainCode.includes("'get-video-sources'"), 'main.cjs must handle get-video-sources');
+  assert(mainCode.includes("'save-video-file'"), 'main.cjs must handle save-video-file');
+  assert(mainCode.includes("'delete-video-file'"), 'main.cjs must handle delete-video-file');
+  assert(mainCode.includes("'export-video-file'"), 'main.cjs must handle export-video-file');
+  assert(mainCode.includes("'video-toggle-mic'"), 'main.cjs must handle video-toggle-mic');
+  assert(mainCode.includes("'video-toggle-webcam'"), 'main.cjs must handle video-toggle-webcam');
+  assert(mainCode.includes('createWebcamWindow'), 'main.cjs must define createWebcamWindow');
+  assert(mainCode.includes('setBackgroundThrottling(false)'), 'main.cjs must disable backgroundThrottling during video recording');
+
+  const webcamBubblePath = path.join(__dirname, '../src/components/recorder/WebcamBubble.tsx');
+  assert(fs.existsSync(webcamBubblePath), 'WebcamBubble.tsx must exist');
+  console.log('✅ [Electron Video IPC & Webcam Window] All IPC handlers and WebcamBubble verified');
+}
+
+console.log('\n🎉 All Video Guide Tests Passed!');

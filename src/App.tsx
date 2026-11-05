@@ -3,6 +3,7 @@ import { useStore } from '@/store/useStore';
 import { Header } from '@/components/layout/Header';
 import { ProjectDashboard } from '@/components/dashboard/ProjectDashboard';
 import { FloatingPill } from '@/components/recorder/FloatingPill';
+import { WebcamBubble } from '@/components/recorder/WebcamBubble';
 import { SplashScreen } from '@/components/common/SplashScreen';
 import { CommandPalette } from '@/components/common/CommandPalette';
 import { api, isElectron, getElectron } from '@/services/api';
@@ -21,6 +22,7 @@ import { Step, CaptureConfig } from '@/types';
 
 export const App: React.FC = () => {
   const isPillMode = window.location.hash === '#pill';
+  const isWebcamMode = window.location.hash.startsWith('#webcam');
 
   const {
     currentView,
@@ -61,7 +63,7 @@ export const App: React.FC = () => {
   }, [setCommandPaletteOpen]);
 
   useEffect(() => {
-    if (isPillMode) {
+    if (isPillMode || isWebcamMode) {
       document.documentElement.classList.add('pill-mode');
       document.body.classList.add('pill-mode');
       document.documentElement.style.background = 'transparent';
@@ -69,7 +71,7 @@ export const App: React.FC = () => {
       document.body.style.background = 'transparent';
       document.body.style.backgroundColor = 'transparent';
     }
-  }, [isPillMode]);
+  }, [isPillMode, isWebcamMode]);
 
   // Recording listener
   useEffect(() => {
@@ -207,6 +209,15 @@ export const App: React.FC = () => {
     return (
       <div className="w-screen h-screen bg-transparent p-0 overflow-hidden select-none flex items-center justify-center">
         <FloatingPill isStandalone={true} />
+      </div>
+    );
+  }
+
+  // If in floating webcam bubble window mode, render ONLY the circular webcam bubble
+  if (isWebcamMode) {
+    return (
+      <div className="w-screen h-screen bg-transparent p-0 overflow-hidden select-none flex items-center justify-center">
+        <WebcamBubble isStandalone={true} />
       </div>
     );
   }
