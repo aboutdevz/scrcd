@@ -331,10 +331,10 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Export Button (only when in editor with active steps) */}
+        {/* Export Button (only when in editor with active steps or video guide) */}
         {currentView === 'editor' && (
           <button
-            disabled={!activeProject || steps.length === 0}
+            disabled={!activeProject || (activeProject.guideType !== 'video' && steps.length === 0)}
             onClick={onOpenExport}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground font-medium text-xs transition-colors disabled:opacity-40"
           >

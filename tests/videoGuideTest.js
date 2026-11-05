@@ -139,4 +139,67 @@ const { clampVideoTrim, normalizeVideoChapters, formatVideoTimestamp } = storage
   console.log('✅ [CaptureSetupModal & FloatingPill] Video mode controls and audio/camera pickers verified');
 }
 
+// 8. Verify HTML Video Guide Exporter & VideoGuideStudio (Task 5)
+{
+  const exportVideoHtmlPath = path.join(__dirname, '../src/services/exporters/exportVideoHtml.ts');
+  assert(fs.existsSync(exportVideoHtmlPath), 'src/services/exporters/exportVideoHtml.ts must exist');
+  const exportCode = fs.readFileSync(exportVideoHtmlPath, 'utf8');
+  assert(exportCode.includes('export function generateVideoGuideHtml'), 'generateVideoGuideHtml must be exported');
+
+  const jsExportCode = stripTypeScriptTypes(exportCode)
+    .replace(/import\s+.*?from\s+['"].*?['"];?/g, '')
+    .replace(/export\s+function/g, 'function');
+
+  const { generateVideoGuideHtml } = new Function(
+    `const formatVideoTimestamp = ${formatVideoTimestamp.toString()};\n${jsExportCode}\nreturn { generateVideoGuideHtml };`
+  )();
+
+  const sampleVideoProject = {
+    id: 'proj_vid_1',
+    title: 'Database Failover Walkthrough',
+    version: '1.2.0',
+    description: '<p>Step-by-step narrated video guide covering primary to replica promotion.</p>',
+    category: 'Tutorial',
+    tags: ['database', 'video'],
+    author: 'System Operations Team',
+    companyName: 'Acme Corp',
+    accentColor: '#2563eb',
+    guideType: 'video',
+    videoPath: 'file:///C:/videos/sample.webm',
+    videoDuration: 125,
+    videoTrimStart: 5,
+    videoTrimEnd: 110,
+    recordedMic: true,
+    recordedSystemAudio: true,
+    recordedWebcam: true,
+    videoChapters: [
+      { id: 'ch1', timestamp: 5, title: 'Verify Replica Lag' },
+      { id: 'ch2', timestamp: 48, title: 'Promote Standby Node' },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  const branding = {
+    companyName: 'Acme Corp',
+    author: 'System Operations Team',
+    accentColor: '#2563eb',
+    footerText: 'Internal Video SOP',
+  };
+
+  const htmlOut = generateVideoGuideHtml(sampleVideoProject, branding);
+  assert(htmlOut.includes('Database Failover Walkthrough'), 'HTML must include project title');
+  assert(htmlOut.includes('Verify Replica Lag'), 'HTML must include chapter 1 title');
+  assert(htmlOut.includes('Promote Standby Node'), 'HTML must include chapter 2 title');
+  assert(htmlOut.includes('toc-leader'), 'HTML must format chapters using classic dotted leader TOC');
+  assert(htmlOut.includes('toc-num'), 'HTML must include right-aligned tabular numerals for chapter timestamps');
+  assert(htmlOut.includes('data-trim-start="5"'), 'HTML video player must embed trimStart');
+  assert(htmlOut.includes('data-trim-end="110"'), 'HTML video player must embed trimEnd');
+  assert(!/[\u{1F300}-\u{1F9FF}]/u.test(htmlOut), 'Exported HTML must contain zero Unicode emojis');
+
+  const studioPath = path.join(__dirname, '../src/components/editor/VideoGuideStudio.tsx');
+  assert(fs.existsSync(studioPath), 'src/components/editor/VideoGuideStudio.tsx must exist');
+  console.log('✅ [VideoGuideStudio & HTML Video Guide Exporter] Classic dotted-leader chapters, trim bounds, and zero-emoji output verified');
+}
+
 console.log('\n🎉 All Video Guide Tests Passed!');

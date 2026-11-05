@@ -6,6 +6,7 @@ import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { ConfirmModal } from '@/components/common/ConfirmModal';
 import { MergeStepsModal } from './MergeStepsModal';
 import { AiHarnessModal } from './AiHarnessModal';
+import { VideoGuideStudio } from './VideoGuideStudio';
 import { getElectron } from '@/services/api';
 import { AnnotationTool, AnnotationShape, Step, ActionType } from '@/types';
 import {
@@ -354,6 +355,10 @@ export const EditorView: React.FC = () => {
     );
     handleUpdateAnnotations({ ...activeStep, annotations: updated });
   };
+
+  if (activeProject?.guideType === 'video') {
+    return <VideoGuideStudio />;
+  }
 
   if (!activeProject || steps.length === 0) {
     return (

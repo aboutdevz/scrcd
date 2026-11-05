@@ -6,6 +6,8 @@ import { generateHtml } from '@/services/exporters/exportHtml';
 import { generateMarkdownZip } from '@/services/exporters/exportMarkdown';
 import { exportProjectToJson } from '@/services/exporters/exportJson';
 import { generateAnimatedGif, generateAnimatedWalkthrough } from '@/services/exporters/exportGif';
+import { generateVideoGuideHtml } from '@/services/exporters/exportVideoHtml';
+import { resolveVideoUrl } from '@/services/videoStorage';
 import { bakeStepsForExport } from '@/services/imageBaker';
 import { api, isElectron } from '@/services/api';
 import {
@@ -15,6 +17,7 @@ import {
   Globe,
   Archive,
   Film,
+  Video,
   CheckCircle,
   Loader2,
   X,
@@ -28,7 +31,7 @@ interface ExportModalProps {
   onClose: () => void;
 }
 
-type ExportType = 'pdf' | 'docx' | 'pptx' | 'html' | 'md' | 'json' | 'gif';
+type ExportType = 'pdf' | 'docx' | 'pptx' | 'html' | 'md' | 'json' | 'gif' | 'webm';
 
 export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
   const { activeProject, steps, branding, updateProject, updateBranding } = useStore();
@@ -56,8 +59,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
       setCustomCompany(activeProject.companyName || branding.companyName || '');
       setCustomAccent(activeProject.accentColor || branding.accentColor || '#2563eb');
       setCustomLogoUrl(activeProject.logoUrl || branding.logoUrl || '');
+      if (activeProject.guideType === 'video') {
+        setSelectedFormat('webm');
+      }
     }
-  }, [isOpen, activeProject?.id]);
+  }, [isOpen, activeProject?.id, activeProject?.guideType]);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -72,57 +78,83 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
 
   if (!isOpen || !activeProject) return null;
 
-  const formats: { id: ExportType; title: string; desc: string; icon: React.ReactNode; ext: string }[] = [
-    {
-      id: 'pdf',
-      title: 'PDF Document',
-      desc: 'Print-ready Standard Operating Procedure layout with Table of Contents',
-      icon: <FileText className="w-5 h-5 text-red-500" />,
-      ext: '.pdf',
-    },
-    {
-      id: 'docx',
-      title: 'Microsoft Word (DOCX)',
-      desc: 'Fully formatted Word document with embedded high-res screenshots and steps',
-      icon: <FileText className="w-5 h-5 text-blue-500" />,
-      ext: '.docx',
-    },
-    {
-      id: 'pptx',
-      title: 'PowerPoint (PPTX)',
-      desc: '16:9 widescreen presentation deck with structured cards and screenshots',
-      icon: <Presentation className="w-5 h-5 text-amber-500" />,
-      ext: '.pptx',
-    },
-    {
-      id: 'html',
-      title: 'Interactive HTML',
-      desc: 'Self-contained offline guide with dark mode and step checklist',
-      icon: <Globe className="w-5 h-5 text-emerald-500" />,
-      ext: '.html',
-    },
-    {
-      id: 'md',
-      title: 'Markdown + Images (ZIP)',
-      desc: 'Clean CommonMark file packaged with screenshots into a ZIP archive',
-      icon: <Archive className="w-5 h-5 text-purple-500" />,
-      ext: '.zip',
-    },
-    {
-      id: 'json',
-      title: 'Project JSON Backup',
-      desc: 'Complete guide data and annotation layers for backup & restore',
-      icon: <FileCode className="w-5 h-5 text-cyan-500" />,
-      ext: '.json',
-    },
-    {
-      id: 'gif',
-      title: 'Animated Walkthrough (GIF / Video)',
-      desc: 'Looping animated slideshow showing click hotspots with pulsating ripple effects',
-      icon: <Film className="w-5 h-5 text-pink-500" />,
-      ext: walkthroughMode === 'gif' ? '.gif' : '.webm',
-    },
-  ];
+  const isVideoGuide = activeProject.guideType === 'video';
+
+  const formats: { id: ExportType; title: string; desc: string; icon: React.ReactNode; ext: string }[] = isVideoGuide
+    ? [
+        {
+          id: 'webm',
+          title: 'WebM Video File (.webm)',
+          desc: 'Download the recorded screen, microphone, and system audio video file',
+          icon: <Video className="w-5 h-5 text-primary" />,
+          ext: '.webm',
+        },
+        {
+          id: 'html',
+          title: 'Interactive HTML Video Guide',
+          desc: 'Self-contained video player page with clickable chapter timestamps and notes',
+          icon: <Globe className="w-5 h-5 text-emerald-500" />,
+          ext: '.html',
+        },
+        {
+          id: 'json',
+          title: 'Project JSON Backup',
+          desc: 'Complete video guide metadata, chapters, and notes for backup',
+          icon: <FileCode className="w-5 h-5 text-cyan-500" />,
+          ext: '.json',
+        },
+      ]
+    : [
+        {
+          id: 'pdf',
+          title: 'PDF Document',
+          desc: 'Print-ready Standard Operating Procedure layout with Table of Contents',
+          icon: <FileText className="w-5 h-5 text-red-500" />,
+          ext: '.pdf',
+        },
+        {
+          id: 'docx',
+          title: 'Microsoft Word (DOCX)',
+          desc: 'Fully formatted Word document with embedded high-res screenshots and steps',
+          icon: <FileText className="w-5 h-5 text-blue-500" />,
+          ext: '.docx',
+        },
+        {
+          id: 'pptx',
+          title: 'PowerPoint (PPTX)',
+          desc: '16:9 widescreen presentation deck with structured cards and screenshots',
+          icon: <Presentation className="w-5 h-5 text-amber-500" />,
+          ext: '.pptx',
+        },
+        {
+          id: 'html',
+          title: 'Interactive HTML',
+          desc: 'Self-contained offline guide with dark mode and step checklist',
+          icon: <Globe className="w-5 h-5 text-emerald-500" />,
+          ext: '.html',
+        },
+        {
+          id: 'md',
+          title: 'Markdown + Images (ZIP)',
+          desc: 'Clean CommonMark file packaged with screenshots into a ZIP archive',
+          icon: <Archive className="w-5 h-5 text-purple-500" />,
+          ext: '.zip',
+        },
+        {
+          id: 'json',
+          title: 'Project JSON Backup',
+          desc: 'Complete guide data and annotation layers for backup & restore',
+          icon: <FileCode className="w-5 h-5 text-cyan-500" />,
+          ext: '.json',
+        },
+        {
+          id: 'gif',
+          title: 'Animated Walkthrough (GIF / Video)',
+          desc: 'Looping animated slideshow showing click hotspots with pulsating ripple effects',
+          icon: <Film className="w-5 h-5 text-pink-500" />,
+          ext: walkthroughMode === 'gif' ? '.gif' : '.webm',
+        },
+      ];
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -155,6 +187,33 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     updateBranding(mergedBranding);
 
     try {
+      if (isVideoGuide && selectedFormat === 'webm') {
+        if (!activeProject.videoPath) {
+          throw new Error('No recorded video file found for this guide');
+        }
+        const res = await api.exportVideoFile(activeProject.videoPath, `${sanitizedTitle}.webm`);
+        if (res.canceled) {
+          setIsExporting(false);
+          return;
+        }
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to export video file');
+        }
+        setExportSuccess(true);
+        setTimeout(() => setExportSuccess(false), 3500);
+        return;
+      }
+
+      if (isVideoGuide && selectedFormat === 'html') {
+        const resolved = await resolveVideoUrl(activeProject.videoPath);
+        const htmlStr = generateVideoGuideHtml(activeProject, mergedBranding, resolved || undefined);
+        const blob = new Blob([htmlStr], { type: 'text/html' });
+        downloadBlob(blob, `${sanitizedTitle}_video_guide.html`);
+        setExportSuccess(true);
+        setTimeout(() => setExportSuccess(false), 3500);
+        return;
+      }
+
       // Bake all annotations and hotspots into screenshots for export
       const exportSteps = selectedFormat === 'json' ? steps : await bakeStepsForExport(steps);
 
@@ -273,7 +332,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-base">Export Guide</h3>
             <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-              {steps.length} Steps
+              {isVideoGuide ? 'Video Guide' : `${steps.length} Steps`}
             </span>
           </div>
           <button

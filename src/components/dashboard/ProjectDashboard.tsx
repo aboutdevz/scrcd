@@ -3,11 +3,13 @@ import { useStore } from '@/store/useStore';
 import { Project, CategoryType, Folder } from '@/types';
 import { parseProjectFromJson } from '@/services/exporters/exportJson';
 import { api } from '@/services/api';
+import { formatVideoTimestamp } from '@/services/videoStorage';
 import { ConfirmModal } from '@/components/common/ConfirmModal';
 import {
   Plus,
   Play,
   FileText,
+  Video,
   Search,
   Trash2,
   Copy,
@@ -862,10 +864,22 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ onOpenCaptur
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 text-primary">
-                          <FileText className="w-4 h-4" />
+                          {project.guideType === 'video' ? (
+                            <Video className="w-4 h-4 text-primary" />
+                          ) : (
+                            <FileText className="w-4 h-4" />
+                          )}
                           <span className="text-xs font-semibold text-muted-foreground">
                             {project.category}
                           </span>
+                          {project.guideType === 'video' && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                              Video Guide
+                              {project.videoDuration
+                                ? ` · ${formatVideoTimestamp(project.videoDuration)}`
+                                : ''}
+                            </span>
+                          )}
                           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary text-muted-foreground border border-border">
                             v{project.version || '1.0.0'}
                           </span>
