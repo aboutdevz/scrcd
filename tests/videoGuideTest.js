@@ -1,8 +1,17 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
-import { stripTypeScriptTypes } from 'module';
+import ts from 'typescript';
 import { fileURLToPath } from 'url';
+
+function stripTypeScriptTypes(code) {
+  return ts.transpileModule(code, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+    },
+  }).outputText;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
