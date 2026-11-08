@@ -797,13 +797,20 @@ export const useStore = create<AppState>((set, get) => ({
   aiConfig: (() => {
     try {
       const raw = localStorage.getItem('scrcd_ai_config');
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          language: 'en' as const,
+          ...parsed,
+        };
+      }
     } catch {}
     return {
       provider: 'openai' as const,
       apiKey: '',
       model: 'gpt-4o-mini',
       customBaseUrl: '',
+      language: 'en' as const,
     };
   })(),
 

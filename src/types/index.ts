@@ -254,6 +254,7 @@ export interface CaptureConfig {
 }
 
 export type AiProvider = 'openai' | 'gemini' | 'anthropic' | 'custom';
+export type AiLanguage = 'en' | 'id';
 
 export interface AiConfig {
   provider: AiProvider;
@@ -261,6 +262,7 @@ export interface AiConfig {
   model: string;
   customBaseUrl?: string;
   systemPrompt?: string;
+  language?: AiLanguage;
 }
 
 
