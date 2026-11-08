@@ -1,4 +1,4 @@
-import { Step, AiConfig } from '@/types';
+import { Step, AiConfig, AiLanguage } from '@/types';
 
 export interface StepUpdateItem {
   id: string;
@@ -147,10 +147,23 @@ export async function testAiConnection(config: AiConfig): Promise<{ success: boo
  * Creates smart, metadata-derived fallback titles and rich instructions
  * if an AI model omits steps or returns an empty payload.
  */
-function createFallbackStepItem(step: Step, stepIndex: number): StepUpdateItem {
-  const target = step.uiaName || step.title || `Element ${stepIndex}`;
-  const app = step.uiaAppName || 'Application';
+export function createFallbackStepItem(step: Step, stepIndex: number, language: AiLanguage = 'en'): StepUpdateItem {
+  const target = step.uiaName || step.title || (language === 'id' ? `Elemen ${stepIndex}` : `Element ${stepIndex}`);
+  const app = step.uiaAppName || (language === 'id' ? 'Aplikasi' : 'Application');
   const isSnapshot = step.actionType === 'snapshot' || step.actionType === 'navigation';
+
+  if (language === 'id') {
+    const verb = isSnapshot ? 'Tinjau' : 'Klik';
+    return {
+      id: step.id,
+      title: `${verb} ${target}`,
+      richInstructions: isSnapshot
+        ? `<p>Tinjau <strong>${target}</strong> di <em>${app}</em>.</p>`
+        : `<p>Klik pada kontrol <strong>${target}</strong> di <em>${app}</em> untuk melanjutkan prosedur.</p>`,
+      sectionTitle: step.sectionTitle,
+    };
+  }
+
   const verb = isSnapshot ? 'View' : 'Click on';
 
   return {
@@ -426,15 +439,25 @@ async function callAiCompletion(
 }
 
 /**
- * Rewrites a single step's instructions with flow awareness and formatting.
+ * Builds the system instructions for single-step rewriting in the target language.
  */
-export async function rewriteStepInstructions(
-  step: Step,
-  config: AiConfig,
-  context: { projectTitle: string; prevStepTitle?: string; nextStepTitle?: string; currentContent?: string }
-): Promise<{ title: string; richInstructions: string }> {
-  const systemInstructions =
-    `You are an expert technical writer and standard operating procedure (SOP) author.
+export function buildRewriteSystemPrompt(language: AiLanguage = 'en'): string {
+  if (language === 'id') {
+    return `Anda adalah seorang penulis teknis profesional dan penyusun SOP (Standar Operasional Prosedur) ahli.
+Tugas Anda adalah menulis ulang dan menyempurnakan instruksi langkah berikut agar lebih profesional, jelas, dan berorientasi tindakan dalam Bahasa Indonesia yang baku.
+
+Panduan:
+1. "title": Judul tindakan imperatif yang ringkas dalam Bahasa Indonesia yang menjelaskan tindakan pengguna (contoh: "Pilih Tab Profil", "Buka Pengaturan Akun", "Kirim Formulir"). JANGAN hanya mengulang nama aplikasi atau judul jendela mentah.
+2. "richInstructions": 1-3 kalimat instruksi yang jelas dalam Bahasa Indonesia berformat HTML dengan tag <p>, <strong>, dan <em> yang menyorot tombol atau elemen yang diklik.
+3. Kembalikan secara ketat dalam format JSON yang valid:
+{
+  "title": "Judul Tindakan",
+  "richInstructions": "<p>Instruksi dengan <strong>elemen</strong> yang disorot.</p>"
+}
+Penting: Jangan memberikan komentar percakapan. Kembalikan objek JSON secara langsung.`;
+  }
+
+  return `You are an expert technical writer and standard operating procedure (SOP) author.
 Your task is to rewrite and polish the following step's instructions to be professional, clear, and action-oriented.
 
 Guidelines:
@@ -446,6 +469,72 @@ Guidelines:
   "richInstructions": "<p>Instructions with <strong>elements</strong> highlighted.</p>"
 }
 Important: Do not output conversational commentary. Return the JSON object directly.`;
+}
+
+/**
+ * Builds the system instructions for batch guide writing in the target language.
+ */
+export function buildBatchSystemPrompt(
+  language: AiLanguage = 'en',
+  groupByChapters: boolean = false,
+  isFirstBatch: boolean = false
+): string {
+  if (language === 'id') {
+    return `Anda adalah seorang penulis teknis profesional dan penyusun SOP (Standar Operasional Prosedur) ahli.
+Tugas Anda adalah menganalisis urutan rekaman alur kerja pengguna dan menulis judul panduan serta instruksi langkah prosedural yang jelas, profesional, dan berorientasi tindakan dalam Bahasa Indonesia yang baku.
+
+Panduan:
+1. "title": Judul tindakan imperatif yang ringkas dan profesional dalam Bahasa Indonesia (contoh: "Pilih Tab Profil", "Buka Pengaturan Akun", "Kirim Formulir", "Unduh Penginstal"). JANGAN hanya mengulang nama aplikasi atau judul jendela mentah.
+2. "richInstructions": Tulis 1-2 kalimat prosedural yang jelas dan terstruktur dalam format HTML menggunakan tag <p>, <strong>, dan <em> yang menyorot kontrol, tombol, atau elemen yang diklik (contoh: "<p>Klik pada tab <strong>Pengalaman Kerja</strong> di <em>READY</em> untuk melihat riwayat kerja.</p>").
+${groupByChapters ? '3. "sectionTitle": Kelompokkan langkah-langkah berurutan terkait ke dalam bab alur kerja logis (contoh: "Bab 1: Masuk Pengguna", "Bab 2: Konfigurasi Profil", "Bab 3: Verifikasi Sistem").' : ''}
+4. Pertahankan nilai "id" yang tepat untuk setiap langkah dalam respon Anda.
+${isFirstBatch ? '5. Berikan "projectTitle" ringkasan panduan yang profesional dalam Bahasa Indonesia.' : ''}
+6. Kembalikan secara ketat dalam format JSON yang valid:
+{
+  ${isFirstBatch ? '"projectTitle": "Judul Panduan Lengkap",' : ''}
+  "steps": [
+    {
+      "id": "step_id",
+      "title": "Judul Tindakan",
+      "richInstructions": "<p>Teks instruksi dengan <strong>Elemen</strong> yang disorot.</p>"${groupByChapters ? ',\n      "sectionTitle": "Nama Bab / Bagian"' : ''}
+    }
+  ]
+}
+Penting: Jangan memberikan komentar atau teks percakapan. Kembalikan objek JSON secara langsung.`;
+  }
+
+  return `You are an expert technical writer and standard operating procedure (SOP) author.
+Your task is to analyze user-recorded workflow sequences and write clear, action-oriented, professional guide titles and formatted instructions describing the user's flow.
+
+Guidelines:
+1. "title": Must be concise, professional, imperative describing the user action (e.g. "Select Profile Tab", "Open Account Settings", "Submit Form", "Download Installer"). NEVER simply repeat the raw application or window title.
+2. "richInstructions": Write 1-2 clear, polished procedural sentences formatted in HTML with <p>, <strong>, and <em> tags highlighting clicked elements or buttons (e.g. "<p>Click on the <strong>CV Experience</strong> tab in <em>READY</em> to view work records.</p>").
+${groupByChapters ? '3. "sectionTitle": Group related sequential steps into logical workflow chapters (e.g. "Chapter 1: User Login", "Chapter 2: Profile Setup", "Chapter 3: Verification").' : ''}
+4. Preserve the exact "id" for each step in your response.
+${isFirstBatch ? '5. Provide an updated overall "projectTitle" summarizing the complete guide.' : ''}
+6. Return strictly valid JSON:
+{
+  ${isFirstBatch ? '"projectTitle": "Polished Guide Title",' : ''}
+  "steps": [
+    {
+      "id": "step_id",
+      "title": "Action Title",
+      "richInstructions": "<p>Instruction text with <strong>Elements</strong> highlighted.</p>"${groupByChapters ? ',\n      "sectionTitle": "Chapter / Section Name"' : ''}
+    }
+  ]
+}
+Important: Do not output conversational commentary. Return the JSON object directly.`;
+}
+
+/**
+ * Rewrites a single step's instructions with flow awareness and formatting.
+ */
+export async function rewriteStepInstructions(
+  step: Step,
+  config: AiConfig,
+  context: { projectTitle: string; prevStepTitle?: string; nextStepTitle?: string; currentContent?: string }
+): Promise<{ title: string; richInstructions: string }> {
+  const systemInstructions = buildRewriteSystemPrompt(config.language || 'en');
 
   const userPrompt = `Guide Title: "${context.projectTitle}"
 Previous Step: ${context.prevStepTitle || 'None (First step)'}
@@ -495,27 +584,7 @@ async function executeAiBatch(
 
   const systemInstructions =
     config.systemPrompt ||
-    `You are an expert technical writer and standard operating procedure (SOP) author.
-Your task is to analyze user-recorded workflow sequences and write clear, action-oriented, professional guide titles and formatted instructions describing the user's flow.
-
-Guidelines:
-1. "title": Must be concise, professional, imperative describing the user action (e.g. "Select Profile Tab", "Open Account Settings", "Submit Form", "Download Installer"). NEVER simply repeat the raw application or window title.
-2. "richInstructions": Write 1-2 clear, polished procedural sentences formatted in HTML with <p>, <strong>, and <em> tags highlighting clicked elements or buttons (e.g. "<p>Click on the <strong>CV Experience</strong> tab in <em>READY</em> to view work records.</p>").
-${groupByChapters ? '3. "sectionTitle": Group related sequential steps into logical workflow chapters (e.g. "Chapter 1: User Login", "Chapter 2: Profile Setup", "Chapter 3: Verification").' : ''}
-4. Preserve the exact "id" for each step in your response.
-${isFirstBatch ? '5. Provide an updated overall "projectTitle" summarizing the complete guide.' : ''}
-6. Return strictly valid JSON:
-{
-  ${isFirstBatch ? '"projectTitle": "Polished Guide Title",' : ''}
-  "steps": [
-    {
-      "id": "step_id",
-      "title": "Action Title",
-      "richInstructions": "<p>Instruction text with <strong>Elements</strong> highlighted.</p>"${groupByChapters ? ',\n      "sectionTitle": "Chapter / Section Name"' : ''}
-    }
-  ]
-}
-Important: Do not output conversational commentary. Return the JSON object directly.`;
+    buildBatchSystemPrompt(config.language || 'en', groupByChapters, isFirstBatch);
 
   const userPrompt = `Guide Topic: "${projectContext.title}"\n${
     projectContext.description ? `Description: "${projectContext.description}"\n` : ''
@@ -598,14 +667,14 @@ export async function autoWriteGuideContent(
             sectionTitle: generated.sectionTitle || originalStep.sectionTitle,
           });
         } else {
-          allResultSteps.push(createFallbackStepItem(originalStep, startIndex + i + 1));
+          allResultSteps.push(createFallbackStepItem(originalStep, startIndex + i + 1, config.language || 'en'));
           supplementedCount++;
         }
       }
     } catch (err: any) {
       console.warn(`AI batch ${bIdx + 1} encountered an error:`, err);
       for (let i = 0; i < batch.length; i++) {
-        allResultSteps.push(createFallbackStepItem(batch[i], startIndex + i + 1));
+        allResultSteps.push(createFallbackStepItem(batch[i], startIndex + i + 1, config.language || 'en'));
         supplementedCount++;
       }
     }
