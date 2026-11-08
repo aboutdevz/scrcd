@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { testAiConnection, AI_PROVIDER_DEFAULTS } from '@/services/aiHarness';
-import { AiProvider } from '@/types';
+import { AiProvider, AiLanguage } from '@/types';
 import {
   Palette,
   ShieldCheck,
@@ -19,6 +19,7 @@ import {
   Tag,
   Plus,
   Trash2,
+  Globe,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -78,6 +79,7 @@ export const SettingsView: React.FC = () => {
   const [aiApiKey, setAiApiKey] = useState(aiConfig.apiKey);
   const [aiModel, setAiModel] = useState(aiConfig.model || AI_PROVIDER_DEFAULTS[aiConfig.provider].defaultModel);
   const [aiCustomBaseUrl, setAiCustomBaseUrl] = useState(aiConfig.customBaseUrl || '');
+  const [aiLanguage, setAiLanguage] = useState<AiLanguage>(aiConfig.language || 'en');
   const [showApiKey, setShowApiKey] = useState(false);
   const [isTestingAi, setIsTestingAi] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -121,6 +123,7 @@ export const SettingsView: React.FC = () => {
       apiKey: aiApiKey.trim(),
       model: aiModel.trim(),
       customBaseUrl: aiCustomBaseUrl.trim() || undefined,
+      language: aiLanguage,
     });
 
     setSaved(true);
@@ -236,6 +239,25 @@ export const SettingsView: React.FC = () => {
                     className="w-full px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
+              </div>
+
+              {/* Language Selector */}
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-primary" />
+                  AI Output Language
+                </label>
+                <p className="text-[11px] text-muted-foreground">
+                  Select target language for AI-generated guide titles, procedural instructions, and chapters.
+                </p>
+                <select
+                  value={aiLanguage}
+                  onChange={(e) => setAiLanguage(e.target.value as AiLanguage)}
+                  className="w-full sm:w-64 px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer font-medium"
+                >
+                  <option value="en">English (Default)</option>
+                  <option value="id">Bahasa Indonesia</option>
+                </select>
               </div>
 
               {/* Test Connection Row */}

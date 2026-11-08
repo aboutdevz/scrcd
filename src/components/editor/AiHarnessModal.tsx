@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { autoWriteGuideContent, AI_PROVIDER_DEFAULTS, StepUpdateItem } from '@/services/aiHarness';
 import { formatCalloutHtml } from '@/services/richText';
-import { AiProvider } from '@/types';
+import { AiProvider, AiLanguage } from '@/types';
 import {
   Bot,
   X,
@@ -14,6 +14,7 @@ import {
   Settings,
   RefreshCw,
   Layers,
+  Globe,
 } from 'lucide-react';
 
 interface AiHarnessModalProps {
@@ -39,17 +40,24 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
   // Quick inline API Key state if empty
   const [inlineKey, setInlineKey] = useState(aiConfig.apiKey);
   const [inlineProvider, setInlineProvider] = useState<AiProvider>(aiConfig.provider);
+  const [inlineLanguage, setInlineLanguage] = useState<AiLanguage>(aiConfig.language || 'en');
 
   if (!isOpen || !activeProject) return null;
 
   const currentProviderInfo = AI_PROVIDER_DEFAULTS[inlineProvider] || AI_PROVIDER_DEFAULTS.openai;
   const hasKey = Boolean(aiConfig.apiKey.trim() || inlineKey.trim());
 
+  const handleLanguageChange = (lang: AiLanguage) => {
+    setInlineLanguage(lang);
+    setAiConfig({ language: lang });
+  };
+
   const handleSaveInlineCredentials = () => {
     setAiConfig({
       provider: inlineProvider,
       apiKey: inlineKey.trim(),
       model: aiConfig.model || currentProviderInfo.defaultModel,
+      language: inlineLanguage,
     });
   };
 
@@ -72,6 +80,7 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
       provider: inlineProvider,
       apiKey: inlineKey.trim() || aiConfig.apiKey,
       model: aiConfig.model || currentProviderInfo.defaultModel,
+      language: inlineLanguage,
     };
 
     try {
@@ -209,6 +218,27 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
               )}
             </div>
           )}
+
+          {/* AI Language Selection Row */}
+          <div className="p-3.5 rounded-xl border border-border bg-secondary/20 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1 rounded-md bg-primary/10 text-primary">
+                <Globe className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-foreground">Output Language</div>
+                <div className="text-[11px] text-muted-foreground">Select language for titles, steps, and chapters</div>
+              </div>
+            </div>
+            <select
+              value={inlineLanguage}
+              onChange={(e) => handleLanguageChange(e.target.value as AiLanguage)}
+              className="px-2.5 py-1.5 rounded-lg bg-card border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer font-medium"
+            >
+              <option value="en">English</option>
+              <option value="id">Bahasa Indonesia</option>
+            </select>
+          </div>
 
           {/* Chapter / Section Grouping Toggle */}
           <label className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-secondary/20 cursor-pointer hover:bg-secondary/40 transition-colors">
