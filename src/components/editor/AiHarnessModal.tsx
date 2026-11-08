@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { autoWriteGuideContent, AI_PROVIDER_DEFAULTS, StepUpdateItem } from '@/services/aiHarness';
 import { formatCalloutHtml } from '@/services/richText';
@@ -41,6 +41,10 @@ export const AiHarnessModal: React.FC<AiHarnessModalProps> = ({ isOpen, onClose,
   const [inlineKey, setInlineKey] = useState(aiConfig.apiKey);
   const [inlineProvider, setInlineProvider] = useState<AiProvider>(aiConfig.provider);
   const [inlineLanguage, setInlineLanguage] = useState<AiLanguage>(aiConfig.language || 'en');
+
+  useEffect(() => {
+    setInlineLanguage(aiConfig.language || 'en');
+  }, [aiConfig.language]);
 
   if (!isOpen || !activeProject) return null;
 
