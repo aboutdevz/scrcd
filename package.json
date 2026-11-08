@@ -1,7 +1,7 @@
 {
   "name": "scrcd",
   "private": true,
-  "version": "1.5.0",
+  "version": "1.6.0",
   "license": "MIT",
   "description": "Step-by-Step SOP & Guide Creator",
   "author": "SCRCD",
