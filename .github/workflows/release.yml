@@ -46,9 +46,24 @@ jobs:
 
       - name: Package Windows executable & installer
         shell: powershell
-        run: npx electron-builder --win nsis portable --publish never
+        run: |
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Write-Host "Running electron-builder (attempt $attempt of $maxAttempts)..."
+            npx electron-builder --win nsis portable --publish never
+            if ($LASTEXITCODE -eq 0) {
+              break
+            }
+            if ($attempt -eq $maxAttempts) {
+              throw "electron-builder failed after $maxAttempts attempts"
+            }
+            Write-Warning "electron-builder failed on attempt $attempt, retrying in 15 seconds..."
+            Start-Sleep -Seconds 15
+          }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/"
+          ELECTRON_BUILDER_BINARIES_MIRROR: "https://npmmirror.com/mirrors/electron-builder-binaries/"
 
       - name: Clean unnecessary files & generate SHA-256 Checksums
         shell: powershell
