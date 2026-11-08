@@ -957,6 +957,55 @@ ipcMain.handle('video-toggle-webcam', () => {
   return videoWebcamEnabled;
 });
 
+ipcMain.handle('set-webcam-window-mode', (_event, mode) => {
+  if (!webcamWindow || webcamWindow.isDestroyed()) return mode;
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { height } = primaryDisplay.workAreaSize;
+  const bounds = primaryDisplay.bounds;
+
+  if (mode === 'fullscreen') {
+    webcamWindow.setBounds({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+    });
+  } else if (mode === 'large') {
+    const size = 280;
+    webcamWindow.setBounds({
+      width: size,
+      height: size,
+      x: 32,
+      y: Math.max(32, height - size - 32),
+    });
+  } else {
+    // default 'small'
+    const size = 164;
+    webcamWindow.setBounds({
+      width: size,
+      height: size,
+      x: 32,
+      y: Math.max(32, height - size - 32),
+    });
+  }
+  return mode;
+});
+
+ipcMain.handle('close-webcam-window', () => {
+  videoWebcamEnabled = false;
+  if (webcamWindow && !webcamWindow.isDestroyed()) {
+    webcamWindow.close();
+    webcamWindow = null;
+  }
+  if (pillWindow && !pillWindow.isDestroyed()) {
+    pillWindow.webContents.send('pill-webcam-state', false);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('video-webcam-state', false);
+  }
+  return false;
+});
+
 ipcMain.handle('save-video-file', async (_event, { projectId, buffer }) => {
   try {
     const videosDir = path.join(app.getPath('userData'), 'videos');

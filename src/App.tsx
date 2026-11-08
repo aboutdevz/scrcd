@@ -65,8 +65,8 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (isPillMode || isWebcamMode) {
-      document.documentElement.classList.add('pill-mode');
-      document.body.classList.add('pill-mode');
+      document.documentElement.classList.add('pill-mode', 'webcam-mode');
+      document.body.classList.add('pill-mode', 'webcam-mode');
       document.documentElement.style.background = 'transparent';
       document.documentElement.style.backgroundColor = 'transparent';
       document.body.style.background = 'transparent';

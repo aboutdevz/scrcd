@@ -25,6 +25,10 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Maximize,
+  Minimize,
+  Expand,
+  Shrink,
 } from 'lucide-react';
 
 export const VideoGuideStudio: React.FC = () => {
@@ -39,12 +43,18 @@ export const VideoGuideStudio: React.FC = () => {
   } = useStore();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playerContainerRef = useRef<HTMLDivElement | null>(null);
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(activeProject?.videoDuration || 0);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [isMuted, setIsMuted] = useState(false);
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showFullscreenControls, setShowFullscreenControls] = useState(true);
+  const hideControlsTimeoutRef = useRef<any>(null);
+  const [isTheaterMode, setIsTheaterMode] = useState(false);
 
   const [trimStart, setTrimStart] = useState<number>(activeProject?.videoTrimStart ?? 0);
   const [trimEnd, setTrimEnd] = useState<number>(
@@ -104,6 +114,70 @@ export const VideoGuideStudio: React.FC = () => {
       v.play().catch(() => {});
     } else {
       v.pause();
+    }
+  };
+
+  const handleToggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        if (playerContainerRef.current) {
+          await playerContainerRef.current.requestFullscreen();
+        }
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.warn('Failed to toggle fullscreen:', err);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const fs = Boolean(document.fullscreenElement);
+      setIsFullscreen(fs);
+      setShowFullscreenControls(true);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const handleFullscreenMouseMove = () => {
+    if (!isFullscreen) return;
+    setShowFullscreenControls(true);
+    if (hideControlsTimeoutRef.current) {
+      clearTimeout(hideControlsTimeoutRef.current);
+    }
+    if (isPlaying) {
+      hideControlsTimeoutRef.current = setTimeout(() => {
+        setShowFullscreenControls(false);
+      }, 2500);
+    }
+  };
+
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        handleToggleFullscreen();
+      } else if (e.key === ' ' && !e.repeat) {
+        e.preventDefault();
+        handleTogglePlay();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, [isPlaying, trimStart, trimEnd]);
+
+  const handleToggleTheaterMode = () => {
+    if (isTheaterMode) {
+      setIsTheaterMode(false);
+      setIsLeftCollapsed(false);
+      setIsRightCollapsed(false);
+    } else {
+      setIsTheaterMode(true);
+      setIsLeftCollapsed(true);
+      setIsRightCollapsed(true);
     }
   };
 
@@ -314,6 +388,34 @@ export const VideoGuideStudio: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={handleToggleTheaterMode}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary hover:bg-secondary/80 border border-border text-xs font-medium text-foreground transition-colors"
+              title={isTheaterMode ? 'Restore Sidebars' : 'Theater / Full-Width View'}
+            >
+              {isTheaterMode ? (
+                <>
+                  <Shrink className="w-3.5 h-3.5 text-primary" />
+                  <span>Restore Sidebars</span>
+                </>
+              ) : (
+                <>
+                  <Expand className="w-3.5 h-3.5 text-primary" />
+                  <span>Full-Width View</span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleFullscreen}
+              disabled={!resolvedUrl}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary hover:bg-secondary/80 border border-border text-xs font-medium text-foreground disabled:opacity-40 transition-colors"
+              title="Fullscreen Player (F)"
+            >
+              <Maximize className="w-3.5 h-3.5 text-primary" />
+              <span>Fullscreen</span>
+            </button>
+            <button
+              type="button"
               onClick={() =>
                 startRecording({
                   scope: 'monitor',
@@ -345,7 +447,15 @@ export const VideoGuideStudio: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-hidden">
           {resolvedUrl ? (
             <div className="w-full max-w-4xl flex flex-col gap-4">
-              <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-border shadow-2xl aspect-video flex items-center justify-center">
+              <div
+                ref={playerContainerRef}
+                onMouseMove={handleFullscreenMouseMove}
+                className={`relative overflow-hidden bg-slate-950 flex items-center justify-center select-none transition-all ${
+                  isFullscreen
+                    ? 'fixed inset-0 w-screen h-screen z-[9999] rounded-none border-none'
+                    : 'rounded-xl border border-border shadow-2xl aspect-video'
+                } ${isFullscreen && !showFullscreenControls ? 'cursor-none' : 'cursor-default'}`}
+              >
                 <video
                   ref={videoRef}
                   src={resolvedUrl}
@@ -356,8 +466,117 @@ export const VideoGuideStudio: React.FC = () => {
                   onPause={() => setIsPlaying(false)}
                   onEnded={() => setIsPlaying(false)}
                   onClick={handleTogglePlay}
+                  onDoubleClick={handleToggleFullscreen}
                   className="w-full h-full object-contain cursor-pointer"
                 />
+
+                {/* Fullscreen Overlay UI */}
+                {isFullscreen && (
+                  <>
+                    {/* Top Floating Title Bar */}
+                    <div
+                      className={`absolute top-0 inset-x-0 p-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent flex items-center justify-between z-30 transition-opacity duration-300 ${
+                        showFullscreenControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 text-white">
+                        <span className="font-semibold text-sm drop-shadow">{activeProject.title || 'Video Guide'}</span>
+                        <span className="text-xs text-white/70 font-mono">({formatVideoTimestamp(duration)})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleToggleFullscreen}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium backdrop-blur transition-colors"
+                        title="Exit Fullscreen (Esc or F)"
+                      >
+                        <Minimize className="w-4 h-4" />
+                        <span>Exit Fullscreen</span>
+                      </button>
+                    </div>
+
+                    {/* Bottom Floating Transport Controls */}
+                    <div
+                      className={`absolute bottom-6 inset-x-4 max-w-3xl mx-auto p-3.5 px-5 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-white/10 shadow-2xl text-white z-30 transition-opacity duration-300 ${
+                        showFullscreenControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={handleTogglePlay}
+                            className="w-9 h-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 transition-colors shadow-md"
+                            title={isPlaying ? 'Pause' : 'Play'}
+                          >
+                            {isPlaying ? (
+                              <Pause className="w-4 h-4" />
+                            ) : (
+                              <Play className="w-4 h-4 fill-current ml-0.5" />
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !isMuted;
+                              setIsMuted(next);
+                              if (videoRef.current) videoRef.current.muted = next;
+                            }}
+                            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+                            title={isMuted ? 'Unmute' : 'Mute'}
+                          >
+                            {isMuted ? (
+                              <VolumeX className="w-4 h-4 text-white/60" />
+                            ) : (
+                              <Volume2 className="w-4 h-4" />
+                            )}
+                          </button>
+
+                          <span className="text-xs font-mono font-semibold text-white/90 tabular-nums">
+                            {formatVideoTimestamp(currentTime)} / {formatVideoTimestamp(duration)}
+                          </span>
+                        </div>
+
+                        {/* Fullscreen Scrubber */}
+                        <input
+                          type="range"
+                          min={0}
+                          max={Math.max(1, duration)}
+                          step={0.1}
+                          value={Math.min(currentTime, Math.max(1, duration))}
+                          onChange={(e) => handleSeek(Number(e.target.value))}
+                          className="flex-1 accent-primary cursor-pointer"
+                        />
+
+                        {/* Speed & Exit Fullscreen Buttons */}
+                        <div className="flex items-center gap-1.5">
+                          {[1, 1.25, 1.5, 2].map((rate) => (
+                            <button
+                              key={rate}
+                              type="button"
+                              onClick={() => handleChangeSpeed(rate)}
+                              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+                                playbackRate === rate
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'bg-white/10 text-white/70 hover:text-white'
+                              }`}
+                            >
+                              {rate}x
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={handleToggleFullscreen}
+                            className="p-1.5 ml-1 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+                            title="Exit Fullscreen (F)"
+                          >
+                            <Minimize className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Custom Transport & Trim Bar */}
@@ -374,7 +593,7 @@ export const VideoGuideStudio: React.FC = () => {
                       {isPlaying ? (
                         <Pause className="w-4 h-4" />
                       ) : (
-                        <Play className="w-4 h-4 fill-current" />
+                        <Play className="w-4 h-4 fill-current ml-0.5" />
                       )}
                     </button>
 
@@ -411,7 +630,7 @@ export const VideoGuideStudio: React.FC = () => {
                     className="flex-1 accent-primary cursor-pointer"
                   />
 
-                  {/* Playback Speed */}
+                  {/* Playback Speed & Fullscreen Button */}
                   <div className="flex items-center gap-1">
                     {[1, 1.25, 1.5, 2].map((rate) => (
                       <button
@@ -427,6 +646,17 @@ export const VideoGuideStudio: React.FC = () => {
                         {rate}x
                       </button>
                     ))}
+
+                    <div className="w-[1px] h-4 bg-border mx-1" />
+
+                    <button
+                      type="button"
+                      onClick={handleToggleFullscreen}
+                      className="p-1.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground transition-colors"
+                      title="Fullscreen View (F)"
+                    >
+                      <Maximize className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 

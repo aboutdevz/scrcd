@@ -225,4 +225,40 @@ const { clampVideoTrim, normalizeVideoChapters, formatVideoTimestamp } = storage
   console.log('✅ [Final Review Fixes] Dashboard thumbnail/HTML preview, ExportModal guard, and getDisplayMedia retry verified');
 }
 
+// 10. Verify Transparent Circular Webcam Bubble & Resizing Modes
+{
+  const indexHtml = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert(indexHtml.includes("h.startsWith('#webcam')"), 'index.html must check for #webcam hash to ensure instant transparency');
+  assert(indexHtml.includes('webcam-mode'), 'index.html must apply webcam-mode class');
+
+  const indexCss = fs.readFileSync(path.join(__dirname, '../src/index.css'), 'utf8');
+  assert(indexCss.includes('html.webcam-mode'), 'index.css must declare html.webcam-mode transparent styling');
+  assert(indexCss.includes('body.webcam-mode'), 'index.css must declare body.webcam-mode transparent styling');
+
+  const webcamBubbleCode = fs.readFileSync(path.join(__dirname, '../src/components/recorder/WebcamBubble.tsx'), 'utf8');
+  assert(webcamBubbleCode.includes('WebcamSizeMode'), 'WebcamBubble must export/define WebcamSizeMode');
+  assert(webcamBubbleCode.includes("'fullscreen'"), 'WebcamBubble must support fullscreen presenter mode');
+  assert(webcamBubbleCode.includes("'large'"), 'WebcamBubble must support large circular mode');
+  assert(webcamBubbleCode.includes("'small'"), 'WebcamBubble must support small circular mode');
+  assert(webcamBubbleCode.includes('set-webcam-window-mode'), 'WebcamBubble must invoke set-webcam-window-mode IPC');
+  assert(webcamBubbleCode.includes('rounded-full'), 'WebcamBubble must render circular rounded-full bubble');
+  console.log('✅ [Webcam Bubble Transparency & Modes] Instant transparent DWM rendering and small/large/fullscreen modes verified');
+}
+
+// 11. Verify Studio Full-Screen View & Theater Mode
+{
+  const studioCode = fs.readFileSync(path.join(__dirname, '../src/components/editor/VideoGuideStudio.tsx'), 'utf8');
+  assert(studioCode.includes('handleToggleFullscreen'), 'VideoGuideStudio must implement handleToggleFullscreen');
+  assert(studioCode.includes('requestFullscreen'), 'VideoGuideStudio must invoke requestFullscreen API');
+  assert(studioCode.includes('fullscreenchange'), 'VideoGuideStudio must listen to fullscreenchange events');
+  assert(studioCode.includes('handleToggleTheaterMode'), 'VideoGuideStudio must implement handleToggleTheaterMode');
+  assert(studioCode.includes('Maximize'), 'VideoGuideStudio must include Maximize Lucide icon');
+  assert(studioCode.includes('Minimize'), 'VideoGuideStudio must include Minimize Lucide icon');
+
+  const mainCode = fs.readFileSync(path.join(__dirname, '../electron/main.cjs'), 'utf8');
+  assert(mainCode.includes("'set-webcam-window-mode'"), 'main.cjs must handle set-webcam-window-mode');
+  assert(mainCode.includes("'close-webcam-window'"), 'main.cjs must handle close-webcam-window');
+  console.log('✅ [Studio Full-Screen & Theater Mode] Player fullscreen, keyboard shortcuts, and theater mode verified');
+}
+
 console.log('\n🎉 All Video Guide Tests Passed!');

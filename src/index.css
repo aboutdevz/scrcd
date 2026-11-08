@@ -75,7 +75,10 @@
 
 html.pill-mode,
 html.pill-mode body,
-body.pill-mode {
+body.pill-mode,
+html.webcam-mode,
+html.webcam-mode body,
+body.webcam-mode {
   background: transparent !important;
   background-color: transparent !important;
 }
