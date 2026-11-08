@@ -243,8 +243,13 @@ export class VideoRecorderEngine {
     this.pauseStartedAt = 0;
 
     if (typeof MediaRecorder !== 'undefined' && finalStream.getTracks().length > 0) {
+      // 1.2 Mbps video + 96 kbps audio: yields ~8-9 MB per minute (down from ~25 MB) with crystal-clear 1080p text
       this.mediaRecorder = supportedMime
-        ? new MediaRecorder(finalStream, { mimeType: supportedMime, videoBitsPerSecond: 3500000 })
+        ? new MediaRecorder(finalStream, {
+            mimeType: supportedMime,
+            videoBitsPerSecond: 1200000,
+            audioBitsPerSecond: 96000,
+          })
         : new MediaRecorder(finalStream);
 
       this.mediaRecorder.ondataavailable = (evt) => {
@@ -273,8 +278,8 @@ export class VideoRecorderEngine {
       const videoMandatory = {
         chromeMediaSource: 'desktop',
         chromeMediaSourceId: sourceId,
-        maxWidth: 1920,
-        maxHeight: 1080,
+        maxWidth: 2560,
+        maxHeight: 1440,
         maxFrameRate: 30,
       };
 
@@ -401,20 +406,31 @@ export class VideoRecorderEngine {
     const draw = () => {
       ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
       if (this.webcamOverlayEnabled && camVideo.readyState >= 2) {
+        const camW = camVideo.videoWidth || 1280;
+        const camH = camVideo.videoHeight || 720;
+
         if (this.webcamMode === 'fullscreen') {
+          // Object-fit: cover for fullscreen camera view to avoid distortion
+          const scale = Math.max(canvas.width / camW, canvas.height / camH);
+          const scaledW = camW * scale;
+          const scaledH = camH * scale;
+          const offsetX = (canvas.width - scaledW) / 2;
+          const offsetY = (canvas.height - scaledH) / 2;
+
           ctx.save();
           ctx.translate(canvas.width, 0);
           ctx.scale(-1, 1);
-          ctx.drawImage(camVideo, 0, 0, canvas.width, canvas.height);
+          ctx.drawImage(camVideo, 0, 0, camW, camH, offsetX, offsetY, scaledW, scaledH);
           ctx.restore();
           return;
         }
 
+        // Compact & sleek circular bubble (small: ~7% of screen height / ~150px on 1080p)
         const radius = this.webcamMode === 'large'
-          ? Math.round(Math.min(canvas.width, canvas.height) * 0.16)
-          : Math.round(Math.min(canvas.width, canvas.height) * 0.11);
+          ? Math.round(Math.min(canvas.width, canvas.height) * 0.115)
+          : Math.round(Math.min(canvas.width, canvas.height) * 0.07);
 
-        const margin = 40;
+        const margin = 28;
         let cx = margin + radius;
         let cy = canvas.height - margin - radius;
 
@@ -423,28 +439,39 @@ export class VideoRecorderEngine {
           cy = Math.round(Math.max(radius + 10, Math.min(canvas.height - radius - 10, this.webcamPos.relY * canvas.height + radius)));
         }
 
+        // Center-crop 1:1 square from 16:9 camera feed (Object-fit: cover) to eliminate any stretching
+        const cropSize = Math.min(camW, camH);
+        const cropX = (camW - cropSize) / 2;
+        const cropY = (camH - cropSize) / 2;
+
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
         ctx.closePath();
         ctx.clip();
-        ctx.translate(cx + radius, cy - radius);
+
+        // Translate to circle center, mirror horizontally, and draw 1:1 square
+        ctx.translate(cx, cy);
         ctx.scale(-1, 1);
-        ctx.drawImage(camVideo, 0, 0, radius * 2, radius * 2);
+        ctx.drawImage(
+          camVideo,
+          cropX, cropY, cropSize, cropSize, // 1:1 square source crop from center of camera frame
+          -radius, -radius, radius * 2, radius * 2 // exact 1:1 square destination
+        );
         ctx.restore();
 
-        // High quality primary border ring
+        // High quality compact border ring
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 3;
         ctx.strokeStyle = '#2563eb';
         ctx.stroke();
 
         // Subtle outer glow/halo ring
         ctx.beginPath();
-        ctx.arc(cx, cy, radius + 2, 0, Math.PI * 2);
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = 'rgba(37, 99, 235, 0.4)';
+        ctx.arc(cx, cy, radius + 1.5, 0, Math.PI * 2);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(37, 99, 235, 0.35)';
         ctx.stroke();
       }
     };

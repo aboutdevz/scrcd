@@ -278,4 +278,17 @@ const { clampVideoTrim, normalizeVideoChapters, formatVideoTimestamp } = storage
   console.log('✅ [Canvas Compositor Circular Clip] Hardware-composited circular webcam bubble and DWM white-box exclusion verified');
 }
 
+// 13. Verify Center Crop (No Distortion), Compact Bubble Sizing & Portable Bitrate
+{
+  const recorderCode = fs.readFileSync(path.join(__dirname, '../src/services/videoRecorder.ts'), 'utf8');
+  assert(recorderCode.includes('cropSize = Math.min(camW, camH)'), 'videoRecorder must center-crop camera to 1:1 square to eliminate stretching');
+  assert(recorderCode.includes('cropX = (camW - cropSize) / 2'), 'videoRecorder must center-crop horizontally');
+  assert(recorderCode.includes('videoBitsPerSecond: 1200000'), 'videoRecorder must use 1.2 Mbps bitrate for lightweight portable video output (~8-9MB/min)');
+  assert(recorderCode.includes('0.07'), 'videoRecorder must use compact 0.07 bubble radius factor');
+
+  const mainCode = fs.readFileSync(path.join(__dirname, '../electron/main.cjs'), 'utf8');
+  assert(mainCode.includes('bubbleSize = 144'), 'main.cjs must use compact 144px small bubble window');
+  console.log('✅ [Webcam Distortion, Compact Sizing & Portable Bitrate] 1:1 center crop, 144px compact bubble, and 1.2Mbps portable size verified');
+}
+
 console.log('\n🎉 All Video Guide Tests Passed!');

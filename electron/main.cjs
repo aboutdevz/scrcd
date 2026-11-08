@@ -192,13 +192,13 @@ function createWebcamWindow(deviceId = '') {
 
   const primaryDisplay = screen.getPrimaryDisplay();
   const { height } = primaryDisplay.workAreaSize;
-  const bubbleSize = 164;
+  const bubbleSize = 144;
 
   webcamWindow = new BrowserWindow({
     width: bubbleSize,
     height: bubbleSize,
-    x: 32,
-    y: Math.max(32, height - bubbleSize - 32),
+    x: 24,
+    y: Math.max(24, height - bubbleSize - 24),
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -984,21 +984,21 @@ ipcMain.handle('set-webcam-window-mode', (_event, mode) => {
       height: bounds.height,
     });
   } else if (mode === 'large') {
-    const size = 280;
+    const size = 230;
     webcamWindow.setBounds({
       width: size,
       height: size,
-      x: 32,
-      y: Math.max(32, height - size - 32),
+      x: 24,
+      y: Math.max(24, height - size - 24),
     });
   } else {
     // default 'small'
-    const size = 164;
+    const size = 144;
     webcamWindow.setBounds({
       width: size,
       height: size,
-      x: 32,
-      y: Math.max(32, height - size - 32),
+      x: 24,
+      y: Math.max(24, height - size - 24),
     });
   }
 

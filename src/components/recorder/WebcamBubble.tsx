@@ -261,11 +261,11 @@ export const WebcamBubble: React.FC<WebcamBubbleProps> = ({
     );
   }
 
-  // Circular Bubble Modes (Small: 164x164, Large: 280x280)
+  // Circular Bubble Modes (Small: 144x144, Large: 230x230)
   const wrapperClasses = isStandalone
-    ? 'w-full h-full flex items-center justify-center p-1.5 select-none overflow-hidden bg-transparent'
+    ? 'w-full h-full flex items-center justify-center p-1 select-none overflow-hidden bg-transparent'
     : sizeMode === 'large'
-      ? 'fixed bottom-6 left-6 z-50 w-64 h-64 flex items-center justify-center select-none bg-transparent'
+      ? 'fixed bottom-6 left-6 z-50 w-56 h-56 flex items-center justify-center select-none bg-transparent'
       : 'fixed bottom-6 left-6 z-50 w-36 h-36 flex items-center justify-center select-none bg-transparent';
 
   return (
@@ -276,7 +276,7 @@ export const WebcamBubble: React.FC<WebcamBubbleProps> = ({
       className={wrapperClasses}
       title="Drag to reposition webcam bubble"
     >
-      <div className="relative w-full h-full rounded-full overflow-hidden border-[3px] border-primary ring-2 ring-primary/30 shadow-2xl bg-slate-950 flex items-center justify-center">
+      <div className="relative w-full h-full rounded-full overflow-hidden border-[2.5px] border-primary ring-1 ring-primary/30 shadow-lg bg-slate-950 flex items-center justify-center">
         <video
           ref={videoRef}
           autoPlay
