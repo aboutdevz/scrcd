@@ -216,8 +216,21 @@ function createWebcamWindow(deviceId = '') {
     },
   });
 
-  // Keep webcam bubble visible in screen capture so desktopCapturer records it like Loom
-  webcamWindow.setContentProtection(false);
+  // Exclude floating webcam window from raw screen capture so Windows DWM doesn't paint a solid white rectangle.
+  // The videoRecorder engine composites the circular bubble directly onto the video frames.
+  webcamWindow.setContentProtection(true);
+
+  webcamWindow.on('move', () => {
+    if (!webcamWindow || webcamWindow.isDestroyed()) return;
+    const [x, y] = webcamWindow.getPosition();
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = primaryDisplay.bounds;
+    const relX = x / (screenW || 1920);
+    const relY = y / (screenH || 1080);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('webcam-window-bounds', { relX, relY });
+    }
+  });
 
   const hashParam = deviceId ? `webcam?deviceId=${encodeURIComponent(deviceId)}` : 'webcam';
   const distPath = path.join(__dirname, '../dist/index.html');
@@ -988,7 +1001,38 @@ ipcMain.handle('set-webcam-window-mode', (_event, mode) => {
       y: Math.max(32, height - size - 32),
     });
   }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('webcam-mode-changed', mode);
+  }
+
   return mode;
+});
+
+ipcMain.on('webcam-window-ready', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('webcam-window-ready');
+  }
+});
+
+ipcMain.on('webcam-bridge-offer', (_event, offer) => {
+  if (webcamWindow && !webcamWindow.isDestroyed()) {
+    webcamWindow.webContents.send('webcam-bridge-offer', offer);
+  }
+});
+
+ipcMain.on('webcam-bridge-answer', (_event, answer) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('webcam-bridge-answer', answer);
+  }
+});
+
+ipcMain.on('webcam-bridge-candidate', (_event, { target, candidate }) => {
+  if (target === 'webcam' && webcamWindow && !webcamWindow.isDestroyed()) {
+    webcamWindow.webContents.send('webcam-bridge-candidate-to-webcam', candidate);
+  } else if (target === 'main' && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('webcam-bridge-candidate-to-main', candidate);
+  }
 });
 
 ipcMain.handle('close-webcam-window', () => {

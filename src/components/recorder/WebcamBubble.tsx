@@ -29,6 +29,8 @@ export const WebcamBubble: React.FC<WebcamBubbleProps> = ({
 
   useEffect(() => {
     let activeStream: MediaStream | null = null;
+    let receiverPC: RTCPeerConnection | null = null;
+    let fallbackTimeout: any = null;
     let cancelled = false;
 
     const hashQuery = window.location.hash.includes('?')
@@ -36,7 +38,7 @@ export const WebcamBubble: React.FC<WebcamBubbleProps> = ({
       : null;
     const resolvedDeviceId = deviceId || hashQuery?.get('deviceId') || undefined;
 
-    const startCamera = async () => {
+    const startLocalCamera = async () => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -58,15 +60,103 @@ export const WebcamBubble: React.FC<WebcamBubbleProps> = ({
         }
         setHasStream(true);
       } catch (err) {
-        console.warn('WebcamBubble failed to acquire camera stream:', err);
+        console.warn('WebcamBubble fallback camera acquire failed:', err);
         setHasStream(false);
       }
     };
 
-    startCamera();
+    // If running in Electron standalone window, connect to WebRTC bridge from mainWindow
+    if (isElectron()) {
+      const electron = getElectron();
+      if (electron?.ipcRenderer) {
+        const onOffer = async (_e: any, offer: any) => {
+          if (cancelled) return;
+          try {
+            if (receiverPC) {
+              try {
+                receiverPC.close();
+              } catch {}
+            }
+            const pc = new RTCPeerConnection();
+            receiverPC = pc;
+
+            pc.ontrack = (event) => {
+              if (cancelled) return;
+              if (videoRef.current && event.streams[0]) {
+                videoRef.current.srcObject = event.streams[0];
+                videoRef.current.play().catch(() => {});
+                setHasStream(true);
+              }
+            };
+
+            pc.onicecandidate = (evt) => {
+              if (evt.candidate && isElectron()) {
+                const el = getElectron();
+                el?.ipcRenderer?.send('webcam-bridge-candidate', {
+                  target: 'main',
+                  candidate: evt.candidate.toJSON(),
+                });
+              }
+            };
+
+            await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            electron.ipcRenderer.send('webcam-bridge-answer', {
+              sdp: answer.sdp,
+              type: answer.type,
+            });
+          } catch (err) {
+            console.warn('Failed to process webcam bridge offer:', err);
+          }
+        };
+
+        const onCandidate = async (_e: any, candidate: any) => {
+          try {
+            if (receiverPC && receiverPC.remoteDescription) {
+              await receiverPC.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+          } catch {}
+        };
+
+        electron.ipcRenderer.on('webcam-bridge-offer', onOffer);
+        electron.ipcRenderer.on('webcam-bridge-candidate-to-webcam', onCandidate);
+
+        // Tell main window that webcamWindow is ready to receive stream
+        electron.ipcRenderer.send('webcam-window-ready');
+
+        // Fallback to local camera after 1.5s if no bridge stream connected
+        fallbackTimeout = setTimeout(() => {
+          if (!cancelled && !videoRef.current?.srcObject) {
+            startLocalCamera();
+          }
+        }, 1500);
+
+        return () => {
+          cancelled = true;
+          if (fallbackTimeout) clearTimeout(fallbackTimeout);
+          if (receiverPC) {
+            try {
+              receiverPC.close();
+            } catch {}
+            receiverPC = null;
+          }
+          electron.ipcRenderer?.removeListener('webcam-bridge-offer', onOffer);
+          electron.ipcRenderer?.removeListener('webcam-bridge-candidate-to-webcam', onCandidate);
+          if (activeStream) {
+            activeStream.getTracks().forEach((t) => t.stop());
+          }
+        };
+      }
+    }
+
+    // Default browser mode or non-bridge path
+    startLocalCamera();
 
     return () => {
       cancelled = true;
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
       if (activeStream) {
         activeStream.getTracks().forEach((t) => t.stop());
       }

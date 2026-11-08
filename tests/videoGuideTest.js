@@ -261,4 +261,21 @@ const { clampVideoTrim, normalizeVideoChapters, formatVideoTimestamp } = storage
   console.log('✅ [Studio Full-Screen & Theater Mode] Player fullscreen, keyboard shortcuts, and theater mode verified');
 }
 
+// 12. Verify Canvas Compositor Circular Clip & Exclusion of Floating Window from Capture
+{
+  const mainCode = fs.readFileSync(path.join(__dirname, '../electron/main.cjs'), 'utf8');
+  assert(mainCode.includes('webcamWindow.setContentProtection(true)'), 'webcamWindow must setContentProtection(true) to exclude from raw screen capture');
+  assert(mainCode.includes("'webcam-bridge-offer'"), 'main.cjs must handle webcam-bridge-offer');
+  assert(mainCode.includes("'webcam-bridge-answer'"), 'main.cjs must handle webcam-bridge-answer');
+
+  const recorderCode = fs.readFileSync(path.join(__dirname, '../src/services/videoRecorder.ts'), 'utf8');
+  assert(recorderCode.includes('broadcastWebcamStream'), 'videoRecorder must invoke broadcastWebcamStream');
+  assert(recorderCode.includes('ctx.arc(cx, cy, radius, 0, Math.PI * 2)'), 'videoRecorder must burn circular arc directly onto frames');
+  assert(recorderCode.includes('ctx.clip()'), 'videoRecorder must clip frames to circular arc');
+
+  const bridgePath = path.join(__dirname, '../src/services/webcamBridge.ts');
+  assert(fs.existsSync(bridgePath), 'src/services/webcamBridge.ts must exist');
+  console.log('✅ [Canvas Compositor Circular Clip] Hardware-composited circular webcam bubble and DWM white-box exclusion verified');
+}
+
 console.log('\n🎉 All Video Guide Tests Passed!');

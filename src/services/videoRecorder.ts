@@ -1,6 +1,7 @@
 import { CaptureConfig } from '@/types';
-import { api, isElectron } from '@/services/api';
+import { api, isElectron, getElectron } from '@/services/api';
 import { saveVideoToStorage } from '@/services/videoStorage';
+import { broadcastWebcamStream, stopWebcamBroadcast } from '@/services/webcamBridge';
 
 export interface VideoRecordingResult {
   videoPath: string;
@@ -92,6 +93,9 @@ export class VideoRecorderEngine {
   private recordedSystemAudio = false;
   private recordedWebcam = false;
   private webcamOverlayEnabled = false;
+  private webcamMode: 'small' | 'large' | 'fullscreen' = 'small';
+  private webcamPos: { relX: number; relY: number } | null = null;
+  private removeIpcListeners: (() => void) | null = null;
   private gainState = createAudioMixerGainState(true, true);
 
   async start(projectId: string, config: CaptureConfig): Promise<void> {
@@ -103,7 +107,27 @@ export class VideoRecorderEngine {
     this.recordedSystemAudio = Boolean(config.recordSystemAudio);
     this.recordedWebcam = Boolean(config.recordWebcam);
     this.webcamOverlayEnabled = Boolean(config.recordWebcam);
+    this.webcamMode = 'small';
+    this.webcamPos = null;
     this.gainState = createAudioMixerGainState(this.recordedMic, this.recordedSystemAudio);
+
+    if (isElectron()) {
+      const electron = getElectron();
+      if (electron?.ipcRenderer) {
+        const onBounds = (_e: any, bounds: { relX: number; relY: number }) => {
+          this.webcamPos = bounds;
+        };
+        const onMode = (_e: any, mode: 'small' | 'large' | 'fullscreen') => {
+          this.webcamMode = mode;
+        };
+        electron.ipcRenderer.on('webcam-window-bounds', onBounds);
+        electron.ipcRenderer.on('webcam-mode-changed', onMode);
+        this.removeIpcListeners = () => {
+          electron.ipcRenderer?.removeListener('webcam-window-bounds', onBounds);
+          electron.ipcRenderer?.removeListener('webcam-mode-changed', onMode);
+        };
+      }
+    }
 
     // 1. Acquire Screen + Desktop System Audio stream
     this.screenStream = await this.acquireScreenStream(config);
@@ -125,21 +149,25 @@ export class VideoRecorderEngine {
       }
     }
 
-    // 3. Optional Canvas Webcam Compositor for single-window capture or browser mode
+    // 3. Canvas Webcam Compositor burns the circular webcam bubble directly into the video
+    // (Bypasses Windows DWM transparent window capture bugs, ensuring 100% circular bubble output)
     let videoTrackToRecord: MediaStreamTrack | undefined = this.screenStream?.getVideoTracks()[0];
-    const needsCanvasWebcam =
-      this.recordedWebcam && (!isElectron() || config.scope === 'window');
+    const needsCanvasWebcam = this.recordedWebcam;
 
     if (needsCanvasWebcam && videoTrackToRecord && navigator.mediaDevices?.getUserMedia) {
       try {
         this.webcamStream = await navigator.mediaDevices.getUserMedia({
           video: {
             deviceId: config.webcamDeviceId ? { exact: config.webcamDeviceId } : undefined,
-            width: { ideal: 320 },
-            height: { ideal: 320 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
           },
           audio: false,
         });
+
+        // Broadcast to floating webcamWindow via local WebRTC bridge
+        broadcastWebcamStream(this.webcamStream);
+
         const comp = await this.createCanvasCompositor(this.screenStream!, this.webcamStream);
         if (comp) {
           videoTrackToRecord = comp.track;
@@ -348,8 +376,22 @@ export class VideoRecorderEngine {
     camVideo.playsInline = true;
     await camVideo.play().catch(() => {});
 
-    const width = screenVideo.videoWidth || 1280;
-    const height = screenVideo.videoHeight || 720;
+    // Ensure metadata is loaded
+    if (!screenVideo.videoWidth) {
+      await new Promise<void>((res) => {
+        screenVideo.onloadedmetadata = () => res();
+        setTimeout(res, 300);
+      });
+    }
+    if (!camVideo.videoWidth) {
+      await new Promise<void>((res) => {
+        camVideo.onloadedmetadata = () => res();
+        setTimeout(res, 300);
+      });
+    }
+
+    const width = screenVideo.videoWidth || 1920;
+    const height = screenVideo.videoHeight || 1080;
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -359,9 +401,27 @@ export class VideoRecorderEngine {
     const draw = () => {
       ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
       if (this.webcamOverlayEnabled && camVideo.readyState >= 2) {
-        const radius = Math.round(Math.min(canvas.width, canvas.height) * 0.11);
-        const cx = 36 + radius;
-        const cy = canvas.height - 36 - radius;
+        if (this.webcamMode === 'fullscreen') {
+          ctx.save();
+          ctx.translate(canvas.width, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(camVideo, 0, 0, canvas.width, canvas.height);
+          ctx.restore();
+          return;
+        }
+
+        const radius = this.webcamMode === 'large'
+          ? Math.round(Math.min(canvas.width, canvas.height) * 0.16)
+          : Math.round(Math.min(canvas.width, canvas.height) * 0.11);
+
+        const margin = 40;
+        let cx = margin + radius;
+        let cy = canvas.height - margin - radius;
+
+        if (this.webcamPos) {
+          cx = Math.round(Math.max(radius + 10, Math.min(canvas.width - radius - 10, this.webcamPos.relX * canvas.width + radius)));
+          cy = Math.round(Math.max(radius + 10, Math.min(canvas.height - radius - 10, this.webcamPos.relY * canvas.height + radius)));
+        }
 
         ctx.save();
         ctx.beginPath();
@@ -373,10 +433,18 @@ export class VideoRecorderEngine {
         ctx.drawImage(camVideo, 0, 0, radius * 2, radius * 2);
         ctx.restore();
 
+        // High quality primary border ring
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
         ctx.lineWidth = 4;
         ctx.strokeStyle = '#2563eb';
+        ctx.stroke();
+
+        // Subtle outer glow/halo ring
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius + 2, 0, Math.PI * 2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(37, 99, 235, 0.4)';
         ctx.stroke();
       }
     };
@@ -396,6 +464,8 @@ export class VideoRecorderEngine {
         window.clearInterval(timer);
         screenVideo.pause();
         camVideo.pause();
+        screenVideo.srcObject = null;
+        camVideo.srcObject = null;
       },
     };
   }
@@ -513,6 +583,13 @@ export class VideoRecorderEngine {
   }
 
   private cleanup(): void {
+    stopWebcamBroadcast();
+    if (this.removeIpcListeners) {
+      try {
+        this.removeIpcListeners();
+      } catch {}
+      this.removeIpcListeners = null;
+    }
     if (this.compositorStop) {
       try {
         this.compositorStop();
